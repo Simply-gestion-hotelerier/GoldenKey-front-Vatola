@@ -18,6 +18,7 @@ import { Receipt, Printer } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useTranslation } from "react-i18next";
+import React from "react";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("fr-FR").format(n);
