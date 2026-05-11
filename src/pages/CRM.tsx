@@ -1,3 +1,4 @@
+// src/pages/crm/CRM.tsx
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -36,6 +37,7 @@ import { toast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { useTranslation } from "react-i18next";
 
 interface CrmCustomer {
   id: string;
@@ -50,6 +52,7 @@ interface CrmCustomer {
 }
 
 const CRM = () => {
+  const { t } = useTranslation();
   const [customers, setCustomers] = useState<CrmCustomer[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<CrmCustomer | null>(null);
@@ -60,7 +63,6 @@ const CRM = () => {
     try { return JSON.parse(localStorage.getItem("crmHiddenCustomers") || "[]"); } catch { return []; }
   });
 
-  // États pour l'exportation améliorée
   const [exportCrmOpen, setExportCrmOpen] = useState(false);
   const [exportCrmLoading, setExportCrmLoading] = useState(false);
 
@@ -78,7 +80,7 @@ const CRM = () => {
       const data = await api.get<CrmCustomer[]>("/crm/customers");
       setCustomers(data);
     } catch (e: any) {
-      toast({ title: "Erreur", description: e?.message || "Impossible de charger les clients", variant: "destructive" });
+      toast({ title: t('common.error'), description: e?.message || t('crm.loadingError'), variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -102,51 +104,23 @@ const CRM = () => {
     return base.filter((c) => !hiddenIds.includes(c.id));
   }, [customers, searchTerm, hiddenIds]);
 
-  // Options d'exportation améliorées
   const exportOptions = [
-    {
-      format: 'excel',
-      label: 'Excel',
-      extension: '.xlsx',
-      icon: FileSpreadsheet,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
-      hoverColor: 'hover:bg-green-100',
-      description: 'Tableur optimisé'
-    },
-    {
-      format: 'csv',
-      label: 'CSV',
-      extension: '.csv',
-      icon: Table,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      hoverColor: 'hover:bg-blue-100',
-      description: 'Données avec séparateurs espaces'
-    },
-    {
-      format: 'txt',
-      label: 'Texte',
-      extension: '.txt',
-      icon: FileText,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
-      hoverColor: 'hover:bg-purple-100',
-      description: 'Format lisible'
-    },
-    {
-      format: 'json',
-      label: 'JSON',
-      extension: '.json',
-      icon: FileCode,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50',
-      hoverColor: 'hover:bg-orange-100',
-      description: 'Données brutes API'
-    }
+    { format: 'excel', label: t('export.excel'), extension: '.xlsx', icon: FileSpreadsheet, color: 'text-green-600', bgColor: 'bg-green-50', hoverColor: 'hover:bg-green-100', description: t('export.excelDescription') },
+    { format: 'csv', label: t('export.csv'), extension: '.csv', icon: Table, color: 'text-blue-600', bgColor: 'bg-blue-50', hoverColor: 'hover:bg-blue-100', description: t('export.csvDescription') },
+    { format: 'txt', label: t('export.txt'), extension: '.txt', icon: FileText, color: 'text-purple-600', bgColor: 'bg-purple-50', hoverColor: 'hover:bg-purple-100', description: t('export.txtDescription') },
+    { format: 'json', label: t('export.json'), extension: '.json', icon: FileCode, color: 'text-orange-600', bgColor: 'bg-orange-50', hoverColor: 'hover:bg-orange-100', description: t('export.jsonDescription') }
   ];
 
-  // Préparer les données pour l'export
+  const getSourceLabel = (source?: string) => {
+    const labels: Record<string, string> = {
+      hotel: t('crm.sourceHotel'),
+      spa: t('crm.sourceSpa'),
+      bar: t('crm.sourceBar'),
+      restaurant: t('crm.sourceRestaurant')
+    };
+    return source ? labels[source] || source : t('common.none');
+  };
+
   const prepareExportData = () => {
     const aujourdhui = new Date().toISOString().slice(0, 10);
     
@@ -158,28 +132,24 @@ const CRM = () => {
       nombreVisites: client.visitCount,
       montantDepense: client.totalSpent,
       montantDepenseFormate: `${new Intl.NumberFormat('fr-FR').format(client.totalSpent)} Ar`,
-      derniereVisite: client.lastVisit ? new Date(client.lastVisit).toLocaleDateString('fr-FR') : 'Jamais',
-      source: client.source || 'Non spécifiée',
+      derniereVisite: client.lastVisit ? new Date(client.lastVisit).toLocaleDateString('fr-FR') : t('common.none'),
+      source: getSourceLabel(client.source),
       notes: client.notes || ''
     }));
 
-    const stats = useMemo(() => {
-      const total = customers.length;
-      const totalVisits = customers.reduce((s, c) => s + (c.visitCount || 0), 0);
-      const totalSpent = customers.reduce((s, c) => s + (c.totalSpent || 0), 0);
-      const last = customers
-        .map((c) => (c.lastVisit ? new Date(c.lastVisit) : null))
-        .filter((d): d is Date => !!d)
-        .sort((a, b) => b.getTime() - a.getTime())[0];
-      return { total, totalVisits, totalSpent, lastVisit: last ? last.toLocaleDateString() : "—" };
-    }, [customers]);
+    const stats = {
+      total: customers.length,
+      totalVisits: customers.reduce((s, c) => s + (c.visitCount || 0), 0),
+      totalSpent: customers.reduce((s, c) => s + (c.totalSpent || 0), 0),
+      lastVisit: customers.map(c => c.lastVisit ? new Date(c.lastVisit) : null).filter(d => d).sort((a, b) => (b?.getTime() || 0) - (a?.getTime() || 0))[0]
+    };
 
     const statistiques = {
       totalClients: stats.total,
       totalVisites: stats.totalVisits,
       depenseTotale: stats.totalSpent,
       depenseTotaleFormate: `${new Intl.NumberFormat('fr-FR').format(stats.totalSpent)} Ar`,
-      derniereVisite: stats.lastVisit,
+      derniereVisite: stats.lastVisit ? stats.lastVisit.toLocaleDateString() : t('common.none'),
       clientsMasques: hiddenIds.length,
       dateExport: new Date().toLocaleString('fr-FR')
     };
@@ -196,194 +166,110 @@ const CRM = () => {
     };
   };
 
-  // Export CSV avec séparateurs espaces
   const exportToCSV = (data: any) => {
-    const csvContent = generateCSVContent(data);
-    const blob = new Blob([csvContent], { 
-      type: 'text/csv;charset=utf-8;' 
-    });
-    saveAs(blob, `rapport-crm-${data.metadata.periode}.csv`);
-  };
+    let csvContent = "\uFEFF";
+    csvContent += `CRM REPORT - SIMPLY HOTEL\n`;
+    csvContent += `${t('common.date')}: ${data.metadata.periode}\n`;
+    csvContent += `${t('export.title')}: ${data.metadata.exportDate}\n`;
+    csvContent += `${t('crm.totalCustomers')}: ${data.metadata.totalClients}\n\n`;
 
-  const generateCSVContent = (data: any): string => {
-    let csvContent = "\uFEFF"; // BOM UTF-8
-    
-    // En-tête du rapport
-    csvContent += "RAPPORT CRM - SIMPLY HOTEL\n";
-    csvContent += `Période: ${data.metadata.periode}\n`;
-    csvContent += `Exporté le: ${data.metadata.exportDate}\n`;
-    csvContent += `Total clients: ${data.metadata.totalClients}\n\n`;
+    csvContent += `${t('crm.loyalty')}\n`;
+    csvContent += `${t('crm.totalCustomers')},${data.statistiques.totalClients}\n`;
+    csvContent += `${t('crm.totalVisits')},${data.statistiques.totalVisites}\n`;
+    csvContent += `${t('crm.totalSpent')},${data.statistiques.depenseTotaleFormate}\n`;
+    csvContent += `${t('crm.lastVisit')},${data.statistiques.derniereVisite}\n\n`;
 
-    // Section statistiques avec séparateur espace
-    csvContent += "SYNTHÈSE DES STATISTIQUES\n";
-    csvContent += "Métrique          Valeur\n";
-    csvContent += `Total clients     ${data.statistiques.totalClients}\n`;
-    csvContent += `Total visites     ${data.statistiques.totalVisites}\n`;
-    csvContent += `Dépense totale    ${data.statistiques.depenseTotaleFormate}\n`;
-    csvContent += `Dernière visite   ${data.statistiques.derniereVisite}\n`;
-    csvContent += `Clients masqués   ${data.statistiques.clientsMasques}\n\n`;
-
-    // Section clients avec formatage aligné
-    csvContent += "BASE CLIENTS\n";
-    csvContent += "ID        Nom Complet              Email                   Téléphone      Visites  Dépensé (Ar)    Dernière Visite  Source          Notes\n";
+    csvContent += `${t('crm.customers')}\n`;
+    csvContent += `${t('common.name')},${t('common.email')},${t('common.phone')},${t('crm.visitCount')},${t('crm.totalSpent')},${t('crm.lastVisit')},${t('crm.source')},${t('common.notes')}\n`;
     
     data.clients.forEach((client: any) => {
-      const ligne = [
-        client.id.toString().padEnd(9),
-        client.nomComplet.padEnd(24),
-        (client.email || '').padEnd(22),
-        (client.telephone || '').padEnd(14),
-        client.nombreVisites.toString().padEnd(8),
-        new Intl.NumberFormat('fr-FR').format(client.montantDepense).padEnd(15),
-        client.derniereVisite.padEnd(16),
-        client.source.padEnd(14),
-        (client.notes || '').substring(0, 30)
-      ].join('  '); // Double espace comme séparateur
-      
-      csvContent += ligne + '\n';
+      csvContent += `"${client.nomComplet}","${client.email}","${client.telephone}",${client.nombreVisites},${client.montantDepense},"${client.derniereVisite}","${client.source}","${client.notes}"\n`;
     });
 
-    return csvContent;
+    saveAs(new Blob([csvContent], { type: 'text/csv;charset=utf-8' }), `crm-export-${data.metadata.periode}.csv`);
   };
 
-  // Export Excel amélioré
   const exportToExcel = (data: any) => {
     const workbook = XLSX.utils.book_new();
     
-    // Feuille de synthèse
     const syntheseData = [
-      ["RAPPORT CRM - SIMPLY HOTEL", ""],
-      ["Période", data.metadata.periode],
-      ["Exporté le", data.metadata.exportDate],
-      ["Total clients", data.metadata.totalClients],
+      ["CRM REPORT - SIMPLY HOTEL", ""],
+      [t('common.date'), data.metadata.periode],
+      [t('export.title'), data.metadata.exportDate],
+      [t('crm.totalCustomers'), data.metadata.totalClients],
       ["", ""],
-      ["SYNTHÈSE DES STATISTIQUES", ""],
-      ["Total clients", data.statistiques.totalClients],
-      ["Total visites", data.statistiques.totalVisites],
-      ["Dépense totale", data.statistiques.depenseTotale],
-      ["Dernière visite", data.statistiques.derniereVisite],
-      ["Clients masqués", data.statistiques.clientsMasques]
+      [t('crm.loyalty'), ""],
+      [t('crm.totalCustomers'), data.statistiques.totalClients],
+      [t('crm.totalVisits'), data.statistiques.totalVisites],
+      [t('crm.totalSpent'), data.statistiques.depenseTotale],
+      [t('crm.lastVisit'), data.statistiques.derniereVisite]
     ];
 
     const syntheseWorksheet = XLSX.utils.aoa_to_sheet(syntheseData);
-    syntheseWorksheet['!cols'] = [
-      { wch: 25 },
-      { wch: 20 }
-    ];
-    XLSX.utils.book_append_sheet(workbook, syntheseWorksheet, "Synthèse");
+    XLSX.utils.book_append_sheet(workbook, syntheseWorksheet, t('crm.loyalty'));
 
-    // Feuille des clients
-    const clientsHeaders = ["ID", "Nom Complet", "Email", "Téléphone", "Nombre Visites", "Montant Dépensé (Ar)", "Dernière Visite", "Source", "Notes"];
-    const clientsData = data.clients.map((client: any) => [
-      client.id,
-      client.nomComplet,
-      client.email,
-      client.telephone,
-      client.nombreVisites,
-      client.montantDepense,
-      client.derniereVisite,
-      client.source,
-      client.notes
-    ]);
-
+    const clientsHeaders = [t('common.name'), t('common.email'), t('common.phone'), t('crm.visitCount'), t('crm.totalSpent'), t('crm.lastVisit'), t('crm.source'), t('common.notes')];
+    const clientsData = data.clients.map((client: any) => [client.nomComplet, client.email, client.telephone, client.nombreVisites, client.montantDepense, client.derniereVisite, client.source, client.notes]);
     const clientsWorksheet = XLSX.utils.aoa_to_sheet([clientsHeaders, ...clientsData]);
-    clientsWorksheet['!cols'] = [
-      { wch: 12 },  // ID
-      { wch: 25 },  // Nom Complet
-      { wch: 25 },  // Email
-      { wch: 15 },  // Téléphone
-      { wch: 12 },  // Nombre Visites
-      { wch: 15 },  // Montant Dépensé
-      { wch: 15 },  // Dernière Visite
-      { wch: 12 },  // Source
-      { wch: 30 }   // Notes
-    ];
-    XLSX.utils.book_append_sheet(workbook, clientsWorksheet, "Clients");
+    XLSX.utils.book_append_sheet(workbook, clientsWorksheet, t('crm.customers'));
 
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    });
-
-    saveAs(blob, `rapport-crm-${data.metadata.periode}.xlsx`);
+    saveAs(new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `crm-export-${data.metadata.periode}.xlsx`);
   };
 
-  // Export TXT amélioré
   const exportToTXT = (data: any) => {
     const textContent = `
-RAPPORT CRM - SIMPLY HOTEL
-===========================
+CRM REPORT - SIMPLY HOTEL
+${"=".repeat(50)}
 
-INFORMATIONS GÉNÉRALES
------------------------
-Hôtel : ${data.metadata.hotelName}
-Période : ${data.metadata.periode}
-Exporté le : ${data.metadata.exportDate}
-Total clients : ${data.metadata.totalClients}
+${t('common.date')}: ${data.metadata.periode}
+${t('export.title')}: ${data.metadata.exportDate}
+${t('crm.totalCustomers')}: ${data.metadata.totalClients}
 
-SYNTHÈSE DES STATISTIQUES
--------------------------
-• Total clients : ${data.statistiques.totalClients}
-• Total visites : ${data.statistiques.totalVisites}
-• Dépense totale : ${data.statistiques.depenseTotaleFormate}
-• Dernière visite : ${data.statistiques.derniereVisite}
-• Clients masqués : ${data.statistiques.clientsMasques}
+${t('crm.loyalty')}
+${"=".repeat(30)}
+${t('crm.totalCustomers')}: ${data.statistiques.totalClients}
+${t('crm.totalVisits')}: ${data.statistiques.totalVisites}
+${t('crm.totalSpent')}: ${data.statistiques.depenseTotaleFormate}
+${t('crm.lastVisit')}: ${data.statistiques.derniereVisite}
 
-BASE CLIENTS (${data.clients.length})
-=====================================
+${t('crm.customers')}
+${"=".repeat(30)}
 ${data.clients.map((client: any, index: number) => `
 ${index + 1}. ${client.nomComplet}
-    ID: ${client.id}
-    Email: ${client.email || 'Non renseigné'}
-    Téléphone: ${client.telephone || 'Non renseigné'}
-    Visites: ${client.nombreVisites}
-    Dépensé: ${client.montantDepenseFormate}
-    Dernière visite: ${client.derniereVisite}
-    Source: ${client.source}
-    ${client.notes ? `Notes: ${client.notes}` : ''}
+   ${t('common.email')}: ${client.email || t('common.none')}
+   ${t('common.phone')}: ${client.telephone || t('common.none')}
+   ${t('crm.visitCount')}: ${client.nombreVisites}
+   ${t('crm.totalSpent')}: ${client.montantDepenseFormate}
+   ${t('crm.lastVisit')}: ${client.derniereVisite}
+   ${t('crm.source')}: ${client.source}
+   ${t('common.notes')}: ${client.notes || t('common.none')}
 `).join('\n')}
-
----
-Rapport généré automatiquement par Simply Hotel CRM
-Système de gestion de la relation client
     `.trim();
 
-    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
-    saveAs(blob, `rapport-crm-${data.metadata.periode}.txt`);
+    saveAs(new Blob([textContent], { type: 'text/plain;charset=utf-8' }), `crm-export-${data.metadata.periode}.txt`);
   };
 
-  // Export JSON amélioré
   const exportToJSON = (data: any) => {
     const jsonData = {
-      entreprise: "Simply Hotel",
-      service: "CRM & Relation Client",
-      dateExport: new Date().toISOString(),
-      periode: data.metadata.periode,
-      totalClients: data.metadata.totalClients,
-      statistiques: {
-        totalClients: data.statistiques.totalClients,
-        totalVisites: data.statistiques.totalVisites,
-        depenseTotale: data.statistiques.depenseTotale,
-        derniereVisite: data.statistiques.derniereVisite,
-        clientsMasques: data.statistiques.clientsMasques
+      hotel: "Simply Hotel",
+      service: "CRM",
+      exportDate: new Date().toISOString(),
+      period: data.metadata.periode,
+      statistics: {
+        totalCustomers: data.statistiques.totalClients,
+        totalVisits: data.statistiques.totalVisites,
+        totalSpent: data.statistiques.depenseTotale,
+        lastVisit: data.statistiques.derniereVisite
       },
-      clients: data.clients
+      customers: data.clients
     };
-
-    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { 
-      type: 'application/json;charset=utf-8' 
-    });
-    saveAs(blob, `rapport-crm-${data.metadata.periode}.json`);
+    saveAs(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' }), `crm-export-${data.metadata.periode}.json`);
   };
 
-  // Gestion de l'export améliorée
   const exporterCRM = async (formatType: string) => {
     if (filteredCustomers.length === 0) {
-      toast({
-        title: "Aucune donnée à exporter",
-        description: "Il n'y a aucun client à exporter",
-        variant: "destructive"
-      });
+      toast({ title: t('export.noDataToExport'), variant: "destructive" });
       return;
     }
 
@@ -392,35 +278,16 @@ Système de gestion de la relation client
     
     try {
       const data = prepareExportData();
-
       switch (formatType) {
-        case 'csv':
-          exportToCSV(data);
-          break;
-        case 'excel':
-          exportToExcel(data);
-          break;
-        case 'txt':
-          exportToTXT(data);
-          break;
-        case 'json':
-          exportToJSON(data);
-          break;
-        default:
-          break;
+        case 'csv': exportToCSV(data); break;
+        case 'excel': exportToExcel(data); break;
+        case 'txt': exportToTXT(data); break;
+        case 'json': exportToJSON(data); break;
       }
-
-      toast({
-        title: "Export réussi",
-        description: `${data.metadata.totalClients} client(s) exporté(s) en ${formatType.toUpperCase()}`
-      });
+      toast({ title: t('export.exportSuccess'), description: t('export.customersExported', { format: formatType.toUpperCase() }) });
     } catch (erreur) {
-      console.error('Erreur lors de l\'export:', erreur);
-      toast({
-        title: 'Erreur exportation',
-        description: String(erreur),
-        variant: 'destructive'
-      });
+      console.error('Export error:', erreur);
+      toast({ title: t('export.exportError'), description: String(erreur), variant: 'destructive' });
     } finally {
       setExportCrmLoading(false);
     }
@@ -429,7 +296,7 @@ Système de gestion de la relation client
   const handleCreateCustomer = async () => {
     const fullName = `${newCustomer.firstName} ${newCustomer.lastName}`.trim();
     if (!fullName || !newCustomer.email) {
-      toast({ title: "Champs manquants", description: "Nom complet et email requis", variant: "destructive" });
+      toast({ title: t('common.error'), description: t('crm.emailRequired'), variant: "destructive" });
       return;
     }
     try {
@@ -440,11 +307,11 @@ Système de gestion de la relation client
         notes: newCustomer.notes || undefined,
       });
       setCustomers((prev) => [created, ...prev]);
-      toast({ title: "Client créé", description: created.fullName });
+      toast({ title: t('crm.customerCreated'), description: created.fullName });
       setNewCustomer({ firstName: "", lastName: "", email: "", phone: "", notes: "" });
       setShowNewCustomer(false);
     } catch (e: any) {
-      toast({ title: "Erreur", description: e?.message || "Impossible de créer le client", variant: "destructive" });
+      toast({ title: t('common.error'), description: e?.message || t('crm.createError'), variant: "destructive" });
     }
   };
 
@@ -459,27 +326,24 @@ Système de gestion de la relation client
       await api.del<void>(`/hotel/guests/${idNum}`);
       setCustomers((prev) => prev.filter((c) => c.id !== row.id));
       if (selectedCustomer && selectedCustomer.id === row.id) setSelectedCustomer(null);
-      toast({ title: "Client supprimé", description: row.fullName });
+      toast({ title: t('crm.customerDeleted'), description: row.fullName });
     } catch (e: any) {
-      toast({ title: "Erreur", description: e?.message || "Impossible de supprimer le client", variant: "destructive" });
+      toast({ title: t('common.error'), description: e?.message || t('crm.deleteError'), variant: "destructive" });
     }
   };
 
   const handleHide = (row: CrmCustomer) => {
     setHiddenIds((prev) => (prev.includes(row.id) ? prev : [...prev, row.id]));
     if (selectedCustomer && selectedCustomer.id === row.id) setSelectedCustomer(null);
-    toast({ title: "Masqué", description: `${row.fullName} est masqué dans le CRM` });
+    toast({ title: t('crm.customerHidden'), description: `${row.fullName} ${t('crm.customerHiddenMessage')}` });
   };
 
   const stats = useMemo(() => {
     const total = customers.length;
     const totalVisits = customers.reduce((s, c) => s + (c.visitCount || 0), 0);
     const totalSpent = customers.reduce((s, c) => s + (c.totalSpent || 0), 0);
-    const last = customers
-      .map((c) => (c.lastVisit ? new Date(c.lastVisit) : null))
-      .filter((d): d is Date => !!d)
-      .sort((a, b) => b.getTime() - a.getTime())[0];
-    return { total, totalVisits, totalSpent, lastVisit: last ? last.toLocaleDateString() : "—" };
+    const last = customers.map(c => c.lastVisit ? new Date(c.lastVisit) : null).filter(d => d).sort((a, b) => (b?.getTime() || 0) - (a?.getTime() || 0))[0];
+    return { total, totalVisits, totalSpent, lastVisit: last ? last.toLocaleDateString() : t('common.none') };
   }, [customers]);
 
   return (
@@ -491,40 +355,28 @@ Système de gestion de la relation client
           <div className="mb-8">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold text-foreground mb-2">CRM & Relation Client</h1>
-                <p className="text-muted-foreground">Base clients • Séjours • Communications</p>
+                <h1 className="text-3xl font-bold text-foreground mb-2">{t('crm.title')}</h1>
+                <p className="text-muted-foreground">{t('crm.subtitle')}</p>
               </div>
               <div className="flex items-center gap-3">
-                {/* Bouton d'exportation amélioré */}
                 <div className="relative">
                   <button
                     onClick={() => setExportCrmOpen(!exportCrmOpen)}
                     disabled={exportCrmLoading || filteredCustomers.length === 0}
-                    className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-blue-400 disabled:to-blue-500 text-white px-4 py-2.5 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl disabled:shadow-md font-semibold group"
+                    className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-blue-400 disabled:to-blue-500 text-white px-4 py-2.5 rounded-lg transition-all duration-200 shadow-lg font-semibold"
                   >
                     {exportCrmLoading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Export en cours...</span>
-                      </>
+                      <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>{t('export.exporting')}</span></>
                     ) : (
-                      <>
-                        <Download className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                        <span>Exporter les données</span>
-                        <ChevronDown className="w-4 h-4 group-hover:rotate-180 transition-transform" />
-                      </>
+                      <><Download className="w-4 h-4" /><span>{t('common.export')}</span><ChevronDown className="w-4 h-4" /></>
                     )}
                   </button>
 
                   {exportCrmOpen && (
-                    <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-10 overflow-hidden backdrop-blur-sm">
-                      {/* En-tête */}
+                    <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-10">
                       <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100">
-                        <p className="text-sm font-bold text-blue-900">Format d'exportation</p>
-                        <p className="text-xs text-blue-600 mt-1">Choisissez le format souhaité</p>
+                        <p className="text-sm font-bold text-blue-900">{t('export.formats')}</p>
                       </div>
-                      
-                      {/* Options d'export */}
                       <div className="p-3 space-y-2">
                         {exportOptions.map((option) => {
                           const IconComponent = option.icon;
@@ -532,39 +384,24 @@ Système de gestion de la relation client
                             <button
                               key={option.format}
                               onClick={() => exporterCRM(option.format)}
-                              className={`flex items-center gap-4 w-full text-left p-3 rounded-lg transition-all duration-200 border border-transparent hover:border-blue-200 ${option.bgColor} ${option.hoverColor} group/option`}
+                              className={`flex items-center gap-4 w-full text-left p-3 rounded-lg transition-all duration-200 border border-transparent hover:border-blue-200 ${option.bgColor} ${option.hoverColor}`}
                             >
-                              <div className={`p-2 rounded-lg ${option.bgColor} group-hover/option:scale-110 transition-transform`}>
+                              <div className={`p-2 rounded-lg ${option.bgColor}`}>
                                 <IconComponent className={`w-5 h-5 ${option.color}`} />
                               </div>
-                              
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-semibold text-gray-900 group-hover/option:text-blue-700 transition-colors">
-                                    {option.label}
-                                  </span>
-                                  <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                                    {option.extension}
-                                  </span>
+                                  <span className="font-semibold text-gray-900">{option.label}</span>
+                                  <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{option.extension}</span>
                                 </div>
-                                <p className="text-xs text-gray-500 mt-0.5">
-                                  {option.description}
-                                </p>
-                              </div>
-                              
-                              <div className="opacity-0 group-hover/option:opacity-100 transition-opacity">
-                                <Download className="w-4 h-4 text-gray-400" />
+                                <p className="text-xs text-gray-500 mt-0.5">{option.description}</p>
                               </div>
                             </button>
                           );
                         })}
                       </div>
-
-                      {/* Pied de page */}
                       <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-                        <p className="text-xs text-gray-500 text-center">
-                          {filteredCustomers.length} client(s) • {new Date().toLocaleDateString('fr-FR')}
-                        </p>
+                        <p className="text-xs text-gray-500 text-center">{filteredCustomers.length} {t('crm.customersFound')}</p>
                       </div>
                     </div>
                   )}
@@ -574,44 +411,44 @@ Système de gestion de la relation client
                   <DialogTrigger asChild>
                     <Button className="bg-primary">
                       <Plus className="mr-2 h-4 w-4" />
-                      Nouveau Client
+                      {t('crm.newCustomer')}
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle>Créer un Nouveau Client</DialogTitle>
+                      <DialogTitle>{t('crm.newCustomer')}</DialogTitle>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label htmlFor="firstName">Prénom *</Label>
-                          <Input id="firstName" value={newCustomer.firstName} onChange={(e) => setNewCustomer({ ...newCustomer, firstName: e.target.value })} placeholder="Prénom" />
+                          <Label htmlFor="firstName">{t('crm.firstName')} *</Label>
+                          <Input id="firstName" value={newCustomer.firstName} onChange={(e) => setNewCustomer({ ...newCustomer, firstName: e.target.value })} placeholder={t('crm.firstName')} />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="lastName">Nom *</Label>
-                          <Input id="lastName" value={newCustomer.lastName} onChange={(e) => setNewCustomer({ ...newCustomer, lastName: e.target.value })} placeholder="Nom de famille" />
+                          <Label htmlFor="lastName">{t('crm.lastName')} *</Label>
+                          <Input id="lastName" value={newCustomer.lastName} onChange={(e) => setNewCustomer({ ...newCustomer, lastName: e.target.value })} placeholder={t('crm.lastName')} />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label htmlFor="email">Email *</Label>
-                          <Input id="email" type="email" value={newCustomer.email} onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })} placeholder="email@exemple.com" />
+                          <Label htmlFor="email">{t('common.email')} *</Label>
+                          <Input id="email" type="email" value={newCustomer.email} onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })} placeholder="email@example.com" />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="phone">Téléphone</Label>
+                          <Label htmlFor="phone">{t('common.phone')}</Label>
                           <Input id="phone" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} placeholder="+261 34 12 345 67" />
                         </div>
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="notes">Notes</Label>
-                        <Textarea id="notes" value={newCustomer.notes} onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })} placeholder="Préférences, historique, informations importantes..." rows={3} />
+                        <Label htmlFor="notes">{t('common.notes')}</Label>
+                        <Textarea id="notes" value={newCustomer.notes} onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })} placeholder={t('common.notes')} rows={3} />
                       </div>
 
                       <div className="flex justify-end space-x-2">
-                        <Button variant="outline" onClick={() => setShowNewCustomer(false)}>Annuler</Button>
-                        <Button onClick={handleCreateCustomer}>Créer le Client</Button>
+                        <Button variant="outline" onClick={() => setShowNewCustomer(false)}>{t('common.cancel')}</Button>
+                        <Button onClick={handleCreateCustomer}>{t('crm.newCustomer')}</Button>
                       </div>
                     </div>
                   </DialogContent>
@@ -621,18 +458,18 @@ Système de gestion de la relation client
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <StatCard title="Total Clients" value={String(stats.total)} icon={Users} variant="default" />
-            <StatCard title="Total Séjours" value={String(stats.totalVisits)} icon={Calendar} variant="default" />
-            <StatCard title="Dépense Totale" value={`${new Intl.NumberFormat("fr-FR").format(stats.totalSpent)} Ar`} icon={TrendingUp} variant="default" />
-            <StatCard title="Dernière visite" value={stats.lastVisit} icon={Award} variant="gold" />
+            <StatCard title={t('crm.totalCustomers')} value={String(stats.total)} icon={Users} variant="default" />
+            <StatCard title={t('crm.totalVisits')} value={String(stats.totalVisits)} icon={Calendar} variant="default" />
+            <StatCard title={t('crm.totalSpent')} value={`${new Intl.NumberFormat("fr-FR").format(stats.totalSpent)} Ar`} icon={TrendingUp} variant="default" />
+            <StatCard title={t('crm.lastVisit')} value={stats.lastVisit} icon={Award} variant="gold" />
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="customers">Clients</TabsTrigger>
-              <TabsTrigger value="loyalty">Fidélité</TabsTrigger>
-              <TabsTrigger value="marketing">Marketing</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              <TabsTrigger value="customers">{t('crm.customers')}</TabsTrigger>
+              <TabsTrigger value="loyalty">{t('crm.loyalty')}</TabsTrigger>
+              <TabsTrigger value="marketing">{t('crm.marketing')}</TabsTrigger>
+              <TabsTrigger value="analytics">{t('crm.analytics')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="customers" className="space-y-6">
@@ -641,12 +478,12 @@ Système de gestion de la relation client
                   <div className="flex flex-wrap gap-4 items-center">
                     <div className="flex items-center space-x-2">
                       <Search className="h-4 w-4 text-muted-foreground" />
-                      <Input placeholder="Rechercher par nom, email ou ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-80" />
+                      <Input placeholder={t('crm.searchPlaceholder')} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-80" />
                     </div>
-                    {loading && <Badge variant="outline">Chargement…</Badge>}
+                    {loading && <Badge variant="outline">{t('common.loading')}</Badge>}
                     <div className="text-sm text-muted-foreground">
-                      {filteredCustomers.length} client{filteredCustomers.length > 1 ? 's' : ''} trouvé{filteredCustomers.length > 1 ? 's' : ''}
-                      {hiddenIds.length > 0 && ` (${hiddenIds.length} masqué${hiddenIds.length > 1 ? 's' : ''})`}
+                      {filteredCustomers.length} {t('crm.customersFound')}
+                      {hiddenIds.length > 0 && ` (${hiddenIds.length} ${t('crm.hiddenCount')})`}
                     </div>
                   </div>
                 </CardContent>
@@ -680,25 +517,21 @@ Système de gestion de la relation client
                         </div>
                         <div className="flex items-center space-x-2 text-sm">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
-                          <span>{customer.visitCount} séjour(s)</span>
+                          <span>{customer.visitCount} {t('crm.visitCount')}</span>
                         </div>
                         <div className="flex items-center space-x-2 text-sm">
                           <Gift className="h-4 w-4 text-muted-foreground" />
-                          <span>{new Intl.NumberFormat("fr-FR").format(customer.totalSpent)} Ar dépensés</span>
+                          <span>{new Intl.NumberFormat("fr-FR").format(customer.totalSpent)} Ar {t('crm.spent')}</span>
                         </div>
                       </div>
 
                       <div className="flex justify-between items-center">
                         <Button size="sm" variant="outline" onClick={() => setSelectedCustomer(customer)}>
-                          Voir Profil
+                          {t('crm.viewProfile')}
                         </Button>
                         <div className="flex space-x-1">
-                          <Button size="sm" variant="ghost">
-                            <Mail className="h-4 w-4" />
-                          </Button>
-                          <Button size="sm" variant="ghost">
-                            <MessageSquare className="h-4 w-4" />
-                          </Button>
+                          <Button size="sm" variant="ghost"><Mail className="h-4 w-4" /></Button>
+                          <Button size="sm" variant="ghost"><MessageSquare className="h-4 w-4" /></Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">
@@ -707,17 +540,15 @@ Système de gestion de la relation client
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>{String(customer.id).startsWith("hotel:") ? "Supprimer ce client ?" : "Masquer ce client ?"}</AlertDialogTitle>
+                                <AlertDialogTitle>{String(customer.id).startsWith("hotel:") ? t('crm.deleteConfirm') : t('crm.hideConfirm')}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  {String(customer.id).startsWith("hotel:")
-                                    ? "Cette action est irréversible. Le client sera définitivement supprimé."
-                                    : "Ce client sera masqué dans la vue CRM. Les données sources ne seront pas supprimées."}
+                                  {String(customer.id).startsWith("hotel:") ? t('crm.deleteWarning') : t('crm.hideWarning')}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Annuler</AlertDialogCancel>
+                                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                                 <AlertDialogAction onClick={() => handleDelete(customer)}>
-                                  {String(customer.id).startsWith("hotel:") ? "Supprimer" : "Masquer"}
+                                  {String(customer.id).startsWith("hotel:") ? t('common.delete') : t('crm.customerHidden')}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -728,36 +559,21 @@ Système de gestion de la relation client
                   </Card>
                 ))}
               </div>
+
               <Dialog open={!!selectedCustomer} onOpenChange={(o) => { if (!o) setSelectedCustomer(null); }}>
                 <DialogContent className="max-w-md">
                   <DialogHeader>
-                    <DialogTitle>Profil Client</DialogTitle>
+                    <DialogTitle>{t('crm.customerProfile')}</DialogTitle>
                   </DialogHeader>
                   {selectedCustomer && (
                     <div className="grid gap-2 py-2 text-sm">
                       <div className="font-semibold text-lg">{selectedCustomer.fullName}</div>
-                      <div className="flex items-center space-x-2">
-                        <Mail className="h-4 w-4 text-muted-foreground" />
-                        <span>{selectedCustomer.email || "—"}</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span>{selectedCustomer.phone || "—"}</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        <span>{selectedCustomer.visitCount} séjour(s)</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Gift className="h-4 w-4 text-muted-foreground" />
-                        <span>{new Intl.NumberFormat("fr-FR").format(selectedCustomer.totalSpent)} Ar dépensés</span>
-                      </div>
-                      <div className="text-muted-foreground">
-                        Dernière visite: {selectedCustomer.lastVisit ? new Date(selectedCustomer.lastVisit).toLocaleString("fr-FR") : "—"}
-                      </div>
-                      {selectedCustomer.notes ? (
-                        <div className="text-muted-foreground">Notes: {selectedCustomer.notes}</div>
-                      ) : null}
+                      <div className="flex items-center space-x-2"><Mail className="h-4 w-4 text-muted-foreground" /><span>{selectedCustomer.email || "—"}</span></div>
+                      <div className="flex items-center space-x-2"><Phone className="h-4 w-4 text-muted-foreground" /><span>{selectedCustomer.phone || "—"}</span></div>
+                      <div className="flex items-center space-x-2"><Calendar className="h-4 w-4 text-muted-foreground" /><span>{selectedCustomer.visitCount} {t('crm.visitCount')}</span></div>
+                      <div className="flex items-center space-x-2"><Gift className="h-4 w-4 text-muted-foreground" /><span>{new Intl.NumberFormat("fr-FR").format(selectedCustomer.totalSpent)} Ar {t('crm.spent')}</span></div>
+                      <div className="text-muted-foreground">{t('crm.lastVisit')}: {selectedCustomer.lastVisit ? new Date(selectedCustomer.lastVisit).toLocaleString("fr-FR") : t('common.none')}</div>
+                      {selectedCustomer.notes && <div className="text-muted-foreground">{t('common.notes')}: {selectedCustomer.notes}</div>}
                     </div>
                   )}
                 </DialogContent>
@@ -767,70 +583,30 @@ Système de gestion de la relation client
             <TabsContent value="loyalty" className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Gift className="mr-2 h-5 w-5 text-orange-500" />
-                      Programme Bronze
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">0 - 999 points</p>
-                      <div className="text-2xl font-bold">—</div>
-                      <p className="text-xs text-muted-foreground">membres actifs</p>
-                    </div>
-                  </CardContent>
+                  <CardHeader><CardTitle className="flex items-center"><Gift className="mr-2 h-5 w-5 text-orange-500" />{t('crm.bronzeProgram')}</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm text-muted-foreground">{t('crm.bronzePoints')}</p></CardContent>
                 </Card>
-
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Award className="mr-2 h-5 w-5 text-yellow-500" />
-                      Programme Gold
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">2500+ points</p>
-                      <div className="text-2xl font-bold">—</div>
-                      <p className="text-xs text-muted-foreground">membres actifs</p>
-                    </div>
-                  </CardContent>
+                  <CardHeader><CardTitle className="flex items-center"><Award className="mr-2 h-5 w-5 text-yellow-500" />{t('crm.goldProgram')}</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm text-muted-foreground">{t('crm.goldPoints')}</p></CardContent>
                 </Card>
-
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Heart className="mr-2 h-5 w-5 text-primary" />
-                      Fidélisation
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Fonctionnalités avancées à venir</p>
-                    </div>
-                  </CardContent>
+                  <CardHeader><CardTitle className="flex items-center"><Heart className="mr-2 h-5 w-5 text-primary" />{t('crm.loyalty')}</CardTitle></CardHeader>
+                  <CardContent><p className="text-sm text-muted-foreground">{t('crm.loyaltyFeatures')}</p></CardContent>
                 </Card>
               </div>
             </TabsContent>
 
             <TabsContent value="marketing" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Campagnes</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">Intégration emailing/SMS à configurer</p>
-                </CardContent>
-              </Card>
+              <Card><CardHeader><CardTitle>{t('crm.campaigns')}</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">{t('crm.emailingSms')}</p></CardContent></Card>
             </TabsContent>
 
             <TabsContent value="analytics" className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard title="Taux de fidélisation" value="—" icon={Heart} trend={{ value: 0, isPositive: true }} variant="success" />
-                <StatCard title="Panier moyen" value="—" icon={TrendingUp} trend={{ value: 0, isPositive: true }} variant="default" />
-                <StatCard title="Fréquence de visite" value="—" icon={Calendar} trend={{ value: 0, isPositive: true }} variant="default" />
-                <StatCard title="LTV moyen" value="—" icon={Award} trend={{ value: 0, isPositive: true }} variant="gold" />
+                <StatCard title={t('crm.retentionRate')} value="—" icon={Heart} variant="success" />
+                <StatCard title={t('crm.averageBasket')} value="—" icon={TrendingUp} variant="default" />
+                <StatCard title={t('crm.visitFrequency')} value="—" icon={Calendar} variant="default" />
+                <StatCard title={t('crm.averageLtv')} value="—" icon={Award} variant="gold" />
               </div>
             </TabsContent>
           </Tabs>

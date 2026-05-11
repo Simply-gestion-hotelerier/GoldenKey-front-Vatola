@@ -1,3 +1,4 @@
+// src/pages/inventory/Inventory.tsx
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -17,6 +18,7 @@ import { api } from "@/lib/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { useTranslation } from "react-i18next";
 
 const itemFormSchema = z.object({
   name: z.string().min(1, "Le nom est requis"),
@@ -37,6 +39,7 @@ const stockFormSchema = z.object({
 });
 
 export default function Inventory() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -61,84 +64,77 @@ export default function Inventory() {
     retry: 1,
   });
 
-const sortedStores = useMemo(() => {
-  return [...stores].sort((a: any, b: any) => {
-    const nameA = (a.name || "").toLowerCase();
-    const nameB = (b.name || "").toLowerCase();
+  const sortedStores = useMemo(() => {
+    return [...stores].sort((a: any, b: any) => {
+      const nameA = (a.name || "").toLowerCase();
+      const nameB = (b.name || "").toLowerCase();
 
-    // Priorité au "restaurant"
-    if (nameA === "restaurant" && nameB !== "restaurant") return -1;
-    if (nameB === "restaurant" && nameA !== "restaurant") return 1;
+      if (nameA === "restaurant" && nameB !== "restaurant") return -1;
+      if (nameB === "restaurant" && nameA !== "restaurant") return 1;
 
-    // Sinon tri alphabétique normal
-    return nameA.localeCompare(nameB);
-  });
-}, [stores]);
+      return nameA.localeCompare(nameB);
+    });
+  }, [stores]);
 
-  // Tri alphabétique des articles
   const sortedItems = useMemo(() => {
     return [...items].sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
   }, [items]);
 
-  // Tri alphabétique des articles disponibles pour le stock
   const sortedAvailableItems = useMemo(() => {
     const presentIds = new Set((stocks || []).map((s: any) => s.itemId || s.item?.id));
     const available = (items || []).filter((it: any) => !presentIds.has(it.id));
     return [...available].sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
   }, [items, stocks]);
 
-  // États pour l'exportation améliorée
   const [exportInventoryOpen, setExportInventoryOpen] = useState(false);
   const [exportInventoryLoading, setExportInventoryLoading] = useState(false);
 
-  // Options d'exportation améliorées
   const exportOptions = [
     {
       format: 'excel',
-      label: 'Excel',
+      label: t('export.excel'),
       extension: '.xlsx',
       icon: FileSpreadsheet,
       color: 'text-green-600',
       bgColor: 'bg-green-50',
       hoverColor: 'hover:bg-green-100',
-      description: 'Tableur optimisé'
+      description: t('export.excelDescription')
     },
     {
       format: 'csv',
-      label: 'CSV',
+      label: t('export.csv'),
       extension: '.csv',
       icon: Table,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
       hoverColor: 'hover:bg-blue-100',
-      description: 'Données avec séparateurs espaces'
+      description: t('export.csvDescription')
     },
     {
       format: 'txt',
-      label: 'Texte',
+      label: t('export.txt'),
       extension: '.txt',
       icon: FileText,
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
       hoverColor: 'hover:bg-purple-100',
-      description: 'Format lisible'
+      description: t('export.txtDescription')
     },
     {
       format: 'json',
-      label: 'JSON',
+      label: t('export.json'),
       extension: '.json',
       icon: FileCode,
       color: 'text-orange-600',
       bgColor: 'bg-orange-50',
       hoverColor: 'hover:bg-orange-100',
-      description: 'Données brutes API'
+      description: t('export.jsonDescription')
     }
   ];
 
-  // Afficher une erreur si la connexion échoue
   useEffect(() => {
     if (movementsError) {
-      console.error("Erreur chargement mouvements:", movementsError);
+      console.error("Error loading movements:", movementsError);
     }
   }, [movementsError]);
 
@@ -204,7 +200,6 @@ const sortedStores = useMemo(() => {
     }
   });
 
-  // Filtrage et calculs
   const stocksByStore = useMemo(() => {
     const s = (stocks || []).filter((st: any) => (st.storeId || st.store?.id || st.store_id) === storeId);
     if (!searchTerm) return s;
@@ -216,7 +211,6 @@ const sortedStores = useMemo(() => {
     });
   }, [stocks, storeId, searchTerm]);
 
-  // Tri alphabétique des stocks par nom d'article
   const sortedStocksByStore = useMemo(() => {
     return [...stocksByStore].sort((a: any, b: any) => {
       const nameA = a.item?.name || a.Item?.name || "";
@@ -235,7 +229,6 @@ const sortedStores = useMemo(() => {
     [sortedStocksByStore]
   );
 
-  // Calcul des statistiques
   const totalValue = useMemo(() =>
     sortedStocksByStore.reduce((sum: number, s: any) => {
       const item = s.item || (items || []).find((i: any) => i.id === s.itemId) || {};
@@ -244,7 +237,6 @@ const sortedStores = useMemo(() => {
     [sortedStocksByStore, items]
   );
 
-  // Préparer les données pour l'export
   const prepareExportData = () => {
     const aujourdhui = new Date().toISOString().slice(0, 10);
     const magasinActuel = sortedStores.find((s: any) => s.id === storeId);
@@ -268,7 +260,7 @@ const sortedStores = useMemo(() => {
     });
 
     const statistiques = {
-      magasin: magasinActuel?.name || 'Tous magasins',
+      magasin: magasinActuel?.name || t('inventory.allStores'),
       totalArticles: sortedStocksByStore.length,
       articlesSeuilBas: lowLevel.length,
       articlesRupture: outOfStock.length,
@@ -282,7 +274,7 @@ const sortedStores = useMemo(() => {
 
     return {
       metadata: {
-        hotelName: "Simply Hotel - Inventaire",
+        hotelName: "Simply Hotel - " + t('inventory.title'),
         exportDate: new Date().toLocaleString('fr-FR'),
         periode: aujourdhui,
         totalStocks: sortedStocksByStore.length
@@ -292,196 +284,121 @@ const sortedStores = useMemo(() => {
     };
   };
 
-  // Export CSV avec séparateurs espaces
   const exportToCSV = (data: any) => {
-    const csvContent = generateCSVContent(data);
-    const blob = new Blob([csvContent], {
-      type: 'text/csv;charset=utf-8;'
-    });
-    saveAs(blob, `inventaire-${data.metadata.periode}.csv`);
-  };
-
-  const generateCSVContent = (data: any): string => {
     let csvContent = "\uFEFF";
+    csvContent += `${t('inventory.exportReport')}\n`;
+    csvContent += `${t('common.date')}: ${data.metadata.periode}\n`;
+    csvContent += `${t('export.title')}: ${data.metadata.exportDate}\n`;
+    csvContent += `${t('inventory.totalStocks')}: ${data.metadata.totalStocks}\n\n`;
 
-    csvContent += "RAPPORT INVENTAIRE - SIMPLY HOTEL\n";
-    csvContent += `Période: ${data.metadata.periode}\n`;
-    csvContent += `Exporté le: ${data.metadata.exportDate}\n`;
-    csvContent += `Total stocks: ${data.metadata.totalStocks}\n\n`;
+    csvContent += `${t('inventory.statisticsSummary')}\n`;
+    csvContent += `${t('inventory.store')},${data.statistiques.magasin}\n`;
+    csvContent += `${t('inventory.totalItems')},${data.statistiques.totalArticles}\n`;
+    csvContent += `${t('inventory.lowStock')},${data.statistiques.articlesSeuilBas}\n`;
+    csvContent += `${t('inventory.outOfStock')},${data.statistiques.articlesRupture}\n`;
+    csvContent += `${t('inventory.totalUnits')},${data.statistiques.unitesTotales}\n`;
+    csvContent += `${t('inventory.totalValue')},${new Intl.NumberFormat('fr-FR').format(data.statistiques.valeurStockTotal)} Ar\n\n`;
 
-    csvContent += "SYNTHÈSE DES STATISTIQUES\n";
-    csvContent += "Métrique          Valeur\n";
-    csvContent += `Magasin           ${data.statistiques.magasin}\n`;
-    csvContent += `Total articles    ${data.statistiques.totalArticles}\n`;
-    csvContent += `Articles seuil bas ${data.statistiques.articlesSeuilBas}\n`;
-    csvContent += `Articles rupture  ${data.statistiques.articlesRupture}\n`;
-    csvContent += `Unités totales    ${data.statistiques.unitesTotales}\n`;
-    csvContent += `Valeur stock      ${new Intl.NumberFormat('fr-FR').format(data.statistiques.valeurStockTotal)} Ar\n\n`;
-
-    csvContent += "DÉTAIL DES STOCKS\n";
-    csvContent += "Numéro  Article              SKU            Unité    Quantité  Seuil Min  Seuil Max  Prix Cout  Prix Vente  Statut      Remplissage\n";
+    csvContent += `${t('inventory.stockDetails')}\n`;
+    csvContent += `${t('inventory.number')},${t('inventory.itemName')},${t('inventory.sku')},${t('inventory.unit')},${t('inventory.quantity')},${t('inventory.minThreshold')},${t('inventory.maxThreshold')},${t('inventory.costPrice')},${t('inventory.salePrice')},${t('inventory.status')},${t('inventory.fillRate')}\n`;
 
     data.stocks.forEach((stock: any) => {
-      const ligne = [
-        stock.numero.toString().padEnd(7),
-        stock.nomArticle.padEnd(20),
-        stock.sku.padEnd(14),
-        stock.unite.padEnd(8),
-        stock.quantite.toString().padEnd(9),
-        stock.seuilMinimum.toString().padEnd(10),
-        stock.seuilMaximum.toString().padEnd(10),
-        new Intl.NumberFormat('fr-FR').format(stock.prixCout).padEnd(10),
-        new Intl.NumberFormat('fr-FR').format(stock.prixVente).padEnd(11),
-        stock.statutStock.padEnd(11),
-        stock.pourcentageRemplissage + '%'
-      ].join('  ');
-
-      csvContent += ligne + '\n';
+      csvContent += `${stock.numero},${stock.nomArticle},${stock.sku},${stock.unite},${stock.quantite},${stock.seuilMinimum},${stock.seuilMaximum},${stock.prixCout},${stock.prixVente},${stock.statutStock},${stock.pourcentageRemplissage}%\n`;
     });
 
-    return csvContent;
+    saveAs(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }), `inventory-${data.metadata.periode}.csv`);
   };
 
-  // Export Excel amélioré
   const exportToExcel = (data: any) => {
     const workbook = XLSX.utils.book_new();
 
     const syntheseData = [
-      ["RAPPORT INVENTAIRE - SIMPLY HOTEL", ""],
-      ["Période", data.metadata.periode],
-      ["Exporté le", data.metadata.exportDate],
-      ["Total stocks", data.metadata.totalStocks],
+      [t('inventory.exportReport'), ""],
+      [t('common.date'), data.metadata.periode],
+      [t('export.title'), data.metadata.exportDate],
+      [t('inventory.totalStocks'), data.metadata.totalStocks],
       ["", ""],
-      ["SYNTHÈSE DES STATISTIQUES", ""],
-      ["Magasin", data.statistiques.magasin],
-      ["Total articles", data.statistiques.totalArticles],
-      ["Articles seuil bas", data.statistiques.articlesSeuilBas],
-      ["Articles rupture", data.statistiques.articlesRupture],
-      ["Unités totales", data.statistiques.unitesTotales],
-      ["Valeur stock total", data.statistiques.valeurStockTotal],
+      [t('inventory.statisticsSummary'), ""],
+      [t('inventory.store'), data.statistiques.magasin],
+      [t('inventory.totalItems'), data.statistiques.totalArticles],
+      [t('inventory.lowStock'), data.statistiques.articlesSeuilBas],
+      [t('inventory.outOfStock'), data.statistiques.articlesRupture],
+      [t('inventory.totalUnits'), data.statistiques.unitesTotales],
+      [t('inventory.totalValue'), data.statistiques.valeurStockTotal],
       ["", ""],
-      ["PERFORMANCE", ""],
-      ["Taux de rupture", `${data.statistiques.totalArticles > 0 ? Math.round((data.statistiques.articlesRupture / data.statistiques.totalArticles) * 100) : 0}%`],
-      ["Taux de seuil bas", `${data.statistiques.totalArticles > 0 ? Math.round((data.statistiques.articlesSeuilBas / data.statistiques.totalArticles) * 100) : 0}%`]
+      [t('inventory.performance'), ""],
+      [t('inventory.outOfStockRate'), `${data.statistiques.totalArticles > 0 ? Math.round((data.statistiques.articlesRupture / data.statistiques.totalArticles) * 100) : 0}%`],
+      [t('inventory.lowStockRate'), `${data.statistiques.totalArticles > 0 ? Math.round((data.statistiques.articlesSeuilBas / data.statistiques.totalArticles) * 100) : 0}%`]
     ];
 
     const syntheseWorksheet = XLSX.utils.aoa_to_sheet(syntheseData);
-    syntheseWorksheet['!cols'] = [
-      { wch: 25 },
-      { wch: 20 }
-    ];
-    XLSX.utils.book_append_sheet(workbook, syntheseWorksheet, "Synthèse");
+    syntheseWorksheet['!cols'] = [{ wch: 25 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(workbook, syntheseWorksheet, t('inventory.summary'));
 
-    const detailsHeaders = ["Numéro", "Article", "SKU", "Unité", "Quantité", "Seuil Min", "Seuil Max", "Prix Cout (Ar)", "Prix Vente (Ar)", "Statut", "Remplissage"];
-    const detailsData = data.stocks.map((stock: any) => [
-      stock.numero,
-      stock.nomArticle,
-      stock.sku,
-      stock.unite,
-      stock.quantite,
-      stock.seuilMinimum,
-      stock.seuilMaximum,
-      stock.prixCout,
-      stock.prixVente,
-      stock.statutStock,
-      `${stock.pourcentageRemplissage}%`
-    ]);
-
+    const detailsHeaders = [t('inventory.number'), t('inventory.itemName'), t('inventory.sku'), t('inventory.unit'), t('inventory.quantity'), t('inventory.minThreshold'), t('inventory.maxThreshold'), t('inventory.costPriceAr'), t('inventory.salePriceAr'), t('inventory.status'), t('inventory.fillRate')];
+    const detailsData = data.stocks.map((stock: any) => [stock.numero, stock.nomArticle, stock.sku, stock.unite, stock.quantite, stock.seuilMinimum, stock.seuilMaximum, stock.prixCout, stock.prixVente, stock.statutStock, `${stock.pourcentageRemplissage}%`]);
     const detailsWorksheet = XLSX.utils.aoa_to_sheet([detailsHeaders, ...detailsData]);
-    detailsWorksheet['!cols'] = [
-      { wch: 8 },
-      { wch: 25 },
-      { wch: 15 },
-      { wch: 8 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 12 }
-    ];
-    XLSX.utils.book_append_sheet(workbook, detailsWorksheet, "Détails Stocks");
+    XLSX.utils.book_append_sheet(workbook, detailsWorksheet, t('inventory.stockDetails'));
 
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    });
-
-    saveAs(blob, `inventaire-${data.metadata.periode}.xlsx`);
+    saveAs(new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `inventory-${data.metadata.periode}.xlsx`);
   };
 
-  // Export TXT amélioré
   const exportToTXT = (data: any) => {
     const textContent = `
-RAPPORT INVENTAIRE - SIMPLY HOTEL
-==================================
+${t('inventory.exportReport')}
+${"=".repeat(50)}
 
-INFORMATIONS GÉNÉRALES
------------------------
-Hôtel : ${data.metadata.hotelName}
-Période : ${data.metadata.periode}
-Exporté le : ${data.metadata.exportDate}
-Total stocks : ${data.metadata.totalStocks}
+${t('inventory.generalInfo')}
+${t('inventory.hotel')}: ${data.metadata.hotelName}
+${t('common.date')}: ${data.metadata.periode}
+${t('export.title')}: ${data.metadata.exportDate}
+${t('inventory.totalStocks')}: ${data.metadata.totalStocks}
 
-SYNTHÈSE DES STATISTIQUES
--------------------------
-• Magasin : ${data.statistiques.magasin}
-• Total articles : ${data.statistiques.totalArticles}
-• Articles seuil bas : ${data.statistiques.articlesSeuilBas}
-• Articles rupture : ${data.statistiques.articlesRupture}
-• Unités totales : ${data.statistiques.unitesTotales}
-• Valeur stock total : ${new Intl.NumberFormat('fr-FR').format(data.statistiques.valeurStockTotal)} Ar
-• Taux de rupture : ${data.statistiques.totalArticles > 0 ? Math.round((data.statistiques.articlesRupture / data.statistiques.totalArticles) * 100) : 0}%
-• Taux de seuil bas : ${data.statistiques.totalArticles > 0 ? Math.round((data.statistiques.articlesSeuilBas / data.statistiques.totalArticles) * 100) : 0}%
+${t('inventory.statisticsSummary')}
+• ${t('inventory.store')}: ${data.statistiques.magasin}
+• ${t('inventory.totalItems')}: ${data.statistiques.totalArticles}
+• ${t('inventory.lowStock')}: ${data.statistiques.articlesSeuilBas}
+• ${t('inventory.outOfStock')}: ${data.statistiques.articlesRupture}
+• ${t('inventory.totalUnits')}: ${data.statistiques.unitesTotales}
+• ${t('inventory.totalValue')}: ${new Intl.NumberFormat('fr-FR').format(data.statistiques.valeurStockTotal)} Ar
+• ${t('inventory.outOfStockRate')}: ${data.statistiques.totalArticles > 0 ? Math.round((data.statistiques.articlesRupture / data.statistiques.totalArticles) * 100) : 0}%
+• ${t('inventory.lowStockRate')}: ${data.statistiques.totalArticles > 0 ? Math.round((data.statistiques.articlesSeuilBas / data.statistiques.totalArticles) * 100) : 0}%
 
-DÉTAIL DES STOCKS
------------------
+${t('inventory.stockDetails')}
 ${data.stocks.map((stock: any, index: number) => `
 ${index + 1}. ${stock.nomArticle}
-    SKU: ${stock.sku}
-    Unité: ${stock.unite}
-    Quantité: ${stock.quantite} (Min: ${stock.seuilMinimum}, Max: ${stock.seuilMaximum})
-    Prix: ${new Intl.NumberFormat('fr-FR').format(stock.prixCout)} Ar → ${new Intl.NumberFormat('fr-FR').format(stock.prixVente)} Ar
-    Statut: ${stock.statutStock}
-    Remplissage: ${stock.pourcentageRemplissage}%
+   ${t('inventory.sku')}: ${stock.sku}
+   ${t('inventory.unit')}: ${stock.unite}
+   ${t('inventory.quantity')}: ${stock.quantite} (${t('inventory.min')}: ${stock.seuilMinimum}, ${t('inventory.max')}: ${stock.seuilMaximum})
+   ${t('inventory.costPrice')}: ${new Intl.NumberFormat('fr-FR').format(stock.prixCout)} Ar → ${t('inventory.salePrice')}: ${new Intl.NumberFormat('fr-FR').format(stock.prixVente)} Ar
+   ${t('inventory.status')}: ${stock.statutStock}
+   ${t('inventory.fillRate')}: ${stock.pourcentageRemplissage}%
 `).join('\n')}
 
 ---
-Rapport généré automatiquement par Simply Hotel
-Système de gestion d'inventaire
+${t('inventory.reportGenerated')}
     `.trim();
 
-    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
-    saveAs(blob, `inventaire-${data.metadata.periode}.txt`);
+    saveAs(new Blob([textContent], { type: 'text/plain;charset=utf-8' }), `inventory-${data.metadata.periode}.txt`);
   };
 
-  // Export JSON amélioré
   const exportToJSON = (data: any) => {
     const jsonData = {
       hotel: "Simply Hotel",
-      service: "Gestion d'Inventaire",
-      dateExport: new Date().toISOString(),
-      periode: data.metadata.periode,
+      service: t('inventory.title'),
+      exportDate: new Date().toISOString(),
+      period: data.metadata.periode,
       totalStocks: data.metadata.totalStocks,
-      statistiques: data.statistiques,
+      statistics: data.statistiques,
       stocks: data.stocks
     };
-
-    const blob = new Blob([JSON.stringify(jsonData, null, 2)], {
-      type: 'application/json;charset=utf-8'
-    });
-    saveAs(blob, `inventaire-${data.metadata.periode}.json`);
+    saveAs(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' }), `inventory-${data.metadata.periode}.json`);
   };
 
-  // Gestion de l'export améliorée
   const exporterInventaire = async (formatType: string) => {
     if (sortedStocksByStore.length === 0) {
-      toast({
-        title: "Aucune donnée à exporter",
-        description: "Il n'y a aucun stock à exporter pour ce magasin",
-        variant: "destructive"
-      });
+      toast({ title: t('export.noDataToExport'), variant: "destructive" });
       return;
     }
 
@@ -492,57 +409,33 @@ Système de gestion d'inventaire
       const data = prepareExportData();
 
       switch (formatType) {
-        case 'csv':
-          exportToCSV(data);
-          break;
-        case 'excel':
-          exportToExcel(data);
-          break;
-        case 'txt':
-          exportToTXT(data);
-          break;
-        case 'json':
-          exportToJSON(data);
-          break;
-        default:
-          break;
+        case 'csv': exportToCSV(data); break;
+        case 'excel': exportToExcel(data); break;
+        case 'txt': exportToTXT(data); break;
+        case 'json': exportToJSON(data); break;
       }
 
-      toast({
-        title: "Export réussi",
-        description: `${data.metadata.totalStocks} stock(s) exporté(s) en ${formatType.toUpperCase()}`
-      });
+      toast({ title: t('export.exportSuccess'), description: `${data.metadata.totalStocks} ${t('inventory.itemsExported')} ${formatType.toUpperCase()}` });
     } catch (erreur) {
-      console.error('Erreur lors de l\'export:', erreur);
-      toast({
-        title: 'Erreur exportation',
-        description: String(erreur),
-        variant: 'destructive'
-      });
+      console.error('Export error:', erreur);
+      toast({ title: t('export.exportError'), description: String(erreur), variant: 'destructive' });
     } finally {
       setExportInventoryLoading(false);
     }
   };
 
-  // Ref pour la section des stocks
   const stockCardRef = useRef<HTMLDivElement>(null);
 
-  // Fonction pour gérer le clic sur un article dans les alertes
   const handleAlertClick = (itemName: string) => {
     setSearchTerm(itemName);
-    // Scroll vers la section des stocks avec un délai pour permettre le rendu
     setTimeout(() => {
       if (stockCardRef.current) {
         stockCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }, 100);
-    toast({
-      title: "Recherche lancée",
-      description: `Recherche de "${itemName}" dans le stock`,
-    });
+    toast({ title: t('inventory.searchLaunched'), description: `${t('inventory.searchingFor')} "${itemName}" ${t('inventory.inStock')}` });
   };
 
-  // Mutations
   const addItemMut = useMutation({
     mutationFn: (data: any) => api.post('/inventory/items', {
       sku: data.sku,
@@ -557,10 +450,7 @@ Système de gestion d'inventaire
       qc.invalidateQueries({ queryKey: ["inventory", "items"] });
       itemForm.reset();
       setShowItemDialog(false);
-      toast({
-        title: 'Article créé',
-        description: `"${createdItem.name}" a été ajouté avec succès.`
-      });
+      toast({ title: t('inventory.itemCreated'), description: `"${createdItem.name}" ${t('inventory.itemCreatedDesc')}` });
 
       stockForm.reset({
         item_id: createdItem.id,
@@ -571,11 +461,7 @@ Système de gestion d'inventaire
       });
       setShowStockDialog(true);
     },
-    onError: (err: any) => toast({
-      title: 'Erreur création article',
-      description: String(err),
-      variant: 'destructive'
-    }),
+    onError: (err: any) => toast({ title: t('common.error'), description: String(err), variant: 'destructive' }),
   });
 
   const addStockMut = useMutation({
@@ -590,18 +476,11 @@ Système de gestion d'inventaire
       qc.invalidateQueries({ queryKey: ["inventory", "stocks"] });
       stockForm.reset();
       setShowStockDialog(false);
-      toast({
-        title: 'Stock créé',
-        description: 'Le stock a été ajouté avec succès.'
-      });
+      toast({ title: t('inventory.stockCreated'), description: t('inventory.stockCreatedDesc') });
     },
     onError: (err: any) => {
       const msg = err?.message || String(err);
-      toast({
-        title: 'Erreur création stock',
-        description: msg.includes('Store not found') ? 'Le magasin sélectionné est introuvable.' : msg,
-        variant: 'destructive'
-      });
+      toast({ title: t('common.error'), description: msg.includes('Store not found') ? t('inventory.storeNotFound') : msg, variant: 'destructive' });
     },
   });
 
@@ -616,17 +495,10 @@ Système de gestion d'inventaire
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory", "stocks"] });
       qc.invalidateQueries({ queryKey: ["inventory", "movements"] });
-      toast({
-        title: 'Mouvement enregistré',
-        description: 'Le mouvement a été enregistré avec succès.'
-      });
+      toast({ title: t('inventory.movementRecorded'), description: t('inventory.movementRecordedDesc') });
       setQty(0);
     },
-    onError: (err: any) => toast({
-      title: 'Erreur mouvement',
-      description: String(err),
-      variant: 'destructive'
-    }),
+    onError: (err: any) => toast({ title: t('common.error'), description: String(err), variant: 'destructive' }),
   });
 
   const deleteItemWithStocksMut = useMutation({
@@ -637,26 +509,13 @@ Système de gestion d'inventaire
       qc.invalidateQueries({ queryKey: ["inventory", "movements"] });
       qc.invalidateQueries({ queryKey: ["inventory", "alerts"] });
 
-      toast({
-        title: 'Article supprimé',
-        description: "L'article et tous ses stocks ont été supprimés avec succès.",
-        variant: 'default'
-      });
+      toast({ title: t('inventory.itemDeleted'), description: t('inventory.itemDeletedDesc') });
     },
-    onError: (err: any) => toast({
-      title: 'Erreur suppression',
-      description: String(err),
-      variant: 'destructive'
-    }),
+    onError: (err: any) => toast({ title: t('common.error'), description: String(err), variant: 'destructive' }),
   });
 
   const editStockWithItemMut = useMutation({
-    mutationFn: (p: {
-      stockId: number;
-      stockData?: any;
-      itemData?: any;
-      itemId?: number;
-    }) => {
+    mutationFn: (p: { stockId: number; stockData?: any; itemData?: any; itemId?: number }) => {
       return api.patch(`/inventory/stocks/${p.stockId}/with-item`, {
         stock: p.stockData,
         item: p.itemData
@@ -666,38 +525,25 @@ Système de gestion d'inventaire
       qc.invalidateQueries({ queryKey: ["inventory", "stocks"] });
       qc.invalidateQueries({ queryKey: ["inventory", "items"] });
       qc.invalidateQueries({ queryKey: ["inventory", "movements"] });
-      toast({
-        title: 'Modifications enregistrées',
-        description: 'Le stock et l\'article ont été mis à jour avec succès.'
-      });
+      toast({ title: t('inventory.changesSaved'), description: t('inventory.changesSavedDesc') });
       setEditingStock(null);
       setEditStockDialog(false);
     },
     onError: (err: any) => {
-      console.error("Erreur mise à jour:", err);
-      toast({
-        title: 'Erreur mise à jour',
-        description: err?.message || String(err),
-        variant: 'destructive'
-      });
+      console.error("Update error:", err);
+      toast({ title: t('common.error'), description: err?.message || String(err), variant: 'destructive' });
     },
   });
 
-  // Effets
   useEffect(() => {
     if (sortedStores.length && !storeId) {
       setStoreId(sortedStores[0].id);
     }
   }, [sortedStores, storeId]);
 
-  // Handlers
   const doMove = () => {
     if (!selectedItem || selectedItem === "" || qty === 0 || !storeId || storeId === "") {
-      toast({
-        title: 'Champs manquants',
-        description: 'Veuillez sélectionner un article, une quantité et un magasin.',
-        variant: 'destructive'
-      });
+      toast({ title: t('common.error'), description: t('inventory.missingFields'), variant: 'destructive' });
       return;
     }
     moveMut.mutate({
@@ -705,7 +551,7 @@ Système de gestion d'inventaire
       itemId: selectedItem as number,
       qty,
       type,
-      reason: type === 'IN' ? 'Réception' : type === 'OUT' ? 'Sortie' : 'Ajustement'
+      reason: type === 'IN' ? t('inventory.receipt') : type === 'OUT' ? t('inventory.exit') : t('inventory.adjustment')
     });
   };
 
@@ -729,25 +575,14 @@ Système de gestion d'inventaire
 
   const onDeleteClick = (stock: any) => {
     const itemId = stock.itemId || stock.item?.id;
-    const itemName = stock.item?.name || "l'article";
+    const itemName = stock.item?.name || t('inventory.theItem');
 
     if (!itemId) {
-      toast({
-        title: 'Erreur',
-        description: "Impossible de trouver l'article à supprimer",
-        variant: 'destructive'
-      });
+      toast({ title: t('common.error'), description: t('inventory.itemNotFound'), variant: 'destructive' });
       return;
     }
 
-    if (confirm(
-      `Êtes-vous sûr de vouloir supprimer "${itemName}" ?\n\n` +
-      `Cette action va supprimer :\n` +
-      `• L'article lui-même\n` +
-      `• Tous ses stocks dans tous les magasins\n` +
-      `• Son historique de mouvements\n` +
-      `\nCette action est irréversible !`
-    )) {
+    if (confirm(t('inventory.deleteConfirm', { name: itemName }))) {
       deleteItemWithStocksMut.mutate(itemId);
     }
   };
@@ -805,7 +640,7 @@ Système de gestion d'inventaire
           const minVal = Number(obj.min || obj.minlevel || obj.min_qty || 0);
           const maxVal = Number(obj.max || obj.maxlevel || obj.max_qty || 100);
 
-          if (!storeIdVal || !itemIdVal) throw new Error('IDs manquants');
+          if (!storeIdVal || !itemIdVal) throw new Error(t('inventory.missingIds'));
           await api.post('/inventory/stocks', {
             storeId: storeIdVal,
             itemId: itemIdVal,
@@ -818,16 +653,9 @@ Système de gestion d'inventaire
       }
 
       qc.invalidateQueries({ queryKey: ["inventory", "stocks"] });
-      toast({
-        title: 'Import terminé',
-        description: `${created} stocks créés, ${failed} échecs`
-      });
+      toast({ title: t('inventory.importComplete'), description: `${created} ${t('inventory.stocksCreated')}, ${failed} ${t('inventory.failures')}` });
     } catch (error) {
-      toast({
-        title: 'Erreur import',
-        description: 'Erreur lors de la lecture du fichier',
-        variant: 'destructive'
-      });
+      toast({ title: t('inventory.importError'), description: t('inventory.importReadError'), variant: 'destructive' });
     } finally {
       setImporting(false);
     }
@@ -842,42 +670,34 @@ Système de gestion d'inventaire
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-auto p-6 space-y-6">
-          {/* En-tête */}
+          {/* Header */}
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold">Gestion des Stocks</h1>
-              <p className="text-muted-foreground">Niveaux de stock • Alertes • Mouvements • Analyse</p>
+              <h1 className="text-3xl font-bold">{t('inventory.title')}</h1>
+              <p className="text-muted-foreground">{t('inventory.subtitle')}</p>
             </div>
 
             <div className="flex gap-3">
-              {/* Bouton d'exportation amélioré */}
+              {/* Export button */}
               <div className="relative">
                 <button
                   onClick={() => setExportInventoryOpen(!exportInventoryOpen)}
                   disabled={exportInventoryLoading}
-                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-blue-400 disabled:to-blue-500 text-white px-4 py-2.5 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl disabled:shadow-md font-semibold group"
+                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-blue-400 disabled:to-blue-500 text-white px-4 py-2.5 rounded-lg transition-all duration-200 shadow-lg font-semibold group"
                 >
                   {exportInventoryLoading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Export en cours...</span>
-                    </>
+                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>{t('export.exporting')}</span></>
                   ) : (
-                    <>
-                      <Download className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                      <span>Exporter l'inventaire</span>
-                      <ChevronDown className="w-4 h-4 group-hover:rotate-180 transition-transform" />
-                    </>
+                    <><Download className="w-4 h-4 group-hover:scale-110 transition-transform" /><span>{t('inventory.exportInventory')}</span><ChevronDown className="w-4 h-4 group-hover:rotate-180 transition-transform" /></>
                   )}
                 </button>
 
                 {exportInventoryOpen && (
-                  <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-10 overflow-hidden backdrop-blur-sm">
+                  <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-10">
                     <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100">
-                      <p className="text-sm font-bold text-blue-900">Format d'exportation</p>
-                      <p className="text-xs text-blue-600 mt-1">Choisissez le format souhaité</p>
+                      <p className="text-sm font-bold text-blue-900">{t('export.formats')}</p>
+                      <p className="text-xs text-blue-600 mt-1">{t('inventory.chooseFormat')}</p>
                     </div>
-
                     <div className="p-3 space-y-2">
                       {exportOptions.map((option) => {
                         const IconComponent = option.icon;
@@ -885,95 +705,71 @@ Système de gestion d'inventaire
                           <button
                             key={option.format}
                             onClick={() => exporterInventaire(option.format)}
-                            className={`flex items-center gap-4 w-full text-left p-3 rounded-lg transition-all duration-200 border border-transparent hover:border-blue-200 ${option.bgColor} ${option.hoverColor} group/option`}
+                            className={`flex items-center gap-4 w-full text-left p-3 rounded-lg transition-all duration-200 border border-transparent hover:border-blue-200 ${option.bgColor} ${option.hoverColor}`}
                           >
-                            <div className={`p-2 rounded-lg ${option.bgColor} group-hover/option:scale-110 transition-transform`}>
+                            <div className={`p-2 rounded-lg ${option.bgColor}`}>
                               <IconComponent className={`w-5 h-5 ${option.color}`} />
                             </div>
-
-                            <div className="flex-1 min-w-0">
+                            <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-semibold text-gray-900 group-hover/option:text-blue-700 transition-colors">
-                                  {option.label}
-                                </span>
-                                <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                                  {option.extension}
-                                </span>
+                                <span className="font-semibold text-gray-900">{option.label}</span>
+                                <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{option.extension}</span>
                               </div>
-                              <p className="text-xs text-gray-500 mt-0.5">
-                                {option.description}
-                              </p>
-                            </div>
-
-                            <div className="opacity-0 group-hover/option:opacity-100 transition-opacity">
-                              <Download className="w-4 h-4 text-gray-400" />
+                              <p className="text-xs text-gray-500 mt-0.5">{option.description}</p>
                             </div>
                           </button>
                         );
                       })}
                     </div>
-
                     <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-                      <p className="text-xs text-gray-500 text-center">
-                        {sortedStocksByStore.length} stock(s) • {new Date().toLocaleDateString('fr-FR')}
-                      </p>
+                      <p className="text-xs text-gray-500 text-center">{sortedStocksByStore.length} {t('inventory.items')}</p>
                     </div>
                   </div>
                 )}
               </div>
 
+              {/* Add Item Dialog */}
               <Dialog open={showItemDialog} onOpenChange={setShowItemDialog}>
                 <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Nouvel Article
-                  </Button>
+                  <Button><Plus className="w-4 h-4 mr-2" />{t('inventory.newItem')}</Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[500px]">
                   <DialogHeader>
-                    <DialogTitle>Ajouter un nouvel article</DialogTitle>
-                    <DialogDescription>
-                      Créez un nouvel article pour votre inventaire
-                    </DialogDescription>
+                    <DialogTitle>{t('inventory.addItem')}</DialogTitle>
+                    <DialogDescription>{t('inventory.addItemDesc')}</DialogDescription>
                   </DialogHeader>
                   <Form {...itemForm}>
                     <form onSubmit={itemForm.handleSubmit(onAddItem)} className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <FormField control={itemForm.control} name="name" render={({ field }) => (
                           <FormItem className="col-span-2">
-                            <FormLabel>Nom de l'article</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Ex: Lait entier UHT" {...field} />
-                            </FormControl>
+                            <FormLabel>{t('inventory.itemName')}</FormLabel>
+                            <FormControl><Input placeholder={t('inventory.itemNamePlaceholder')} {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
 
                         <FormField control={itemForm.control} name="sku" render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Référence SKU</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Ex: LAIT-UHT-1L" {...field} />
-                            </FormControl>
+                            <FormLabel>{t('inventory.sku')}</FormLabel>
+                            <FormControl><Input placeholder={t('inventory.skuPlaceholder')} {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
 
                         <FormField control={itemForm.control} name="unit" render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Unité</FormLabel>
+                            <FormLabel>{t('inventory.unit')}</FormLabel>
                             <FormControl>
                               <Select onValueChange={field.onChange} value={field.value}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Sélectionner une unité" />
-                                </SelectTrigger>
+                                <SelectTrigger><SelectValue placeholder={t('inventory.selectUnit')} /></SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="piece">Pièce</SelectItem>
-                                  <SelectItem value="kg">Kilogramme</SelectItem>
-                                  <SelectItem value="g">Gramme</SelectItem>
-                                  <SelectItem value="L">Litre</SelectItem>
-                                  <SelectItem value="cl">Centilitre</SelectItem>
-                                  <SelectItem value="ml">Millilitre</SelectItem>
+                                  <SelectItem value="piece">{t('inventory.unitPiece')}</SelectItem>
+                                  <SelectItem value="kg">{t('inventory.unitKg')}</SelectItem>
+                                  <SelectItem value="g">{t('inventory.unitG')}</SelectItem>
+                                  <SelectItem value="L">{t('inventory.unitL')}</SelectItem>
+                                  <SelectItem value="cl">{t('inventory.unitCl')}</SelectItem>
+                                  <SelectItem value="ml">{t('inventory.unitMl')}</SelectItem>
                                 </SelectContent>
                               </Select>
                             </FormControl>
@@ -983,102 +779,58 @@ Système de gestion d'inventaire
 
                         <FormField control={itemForm.control} name="cost_price" render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Prix coûtant (Ar)</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
-                              />
-                            </FormControl>
+                            <FormLabel>{t('inventory.costPrice')}</FormLabel>
+                            <FormControl><Input type="number" min="0" step="0.01" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
 
                         <FormField control={itemForm.control} name="sale_price_default" render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Prix de vente (Ar)</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
-                              />
-                            </FormControl>
+                            <FormLabel>{t('inventory.salePrice')}</FormLabel>
+                            <FormControl><Input type="number" min="0" step="0.01" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
 
                         <FormField control={itemForm.control} name="vat_rate" render={({ field }) => (
                           <FormItem className="col-span-2">
-                            <FormLabel>TVA (%)</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min="0"
-                                max="100"
-                                {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
-                              />
-                            </FormControl>
+                            <FormLabel>{t('inventory.vatRate')}</FormLabel>
+                            <FormControl><Input type="number" min="0" max="100" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
                       </div>
-
                       <div className="flex justify-end gap-3">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setShowItemDialog(false)}
-                        >
-                          Annuler
-                        </Button>
-                        <Button type="submit" disabled={addItemMut.isPending}>
-                          {addItemMut.isPending ? "Création..." : "Créer l'article"}
-                        </Button>
+                        <Button type="button" variant="outline" onClick={() => setShowItemDialog(false)}>{t('common.cancel')}</Button>
+                        <Button type="submit" disabled={addItemMut.isPending}>{addItemMut.isPending ? t('common.loading') : t('inventory.createItem')}</Button>
                       </div>
                     </form>
                   </Form>
                 </DialogContent>
               </Dialog>
 
+              {/* Add Stock Dialog */}
               <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
                 <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <Package className="w-4 h-4 mr-2" />
-                    Nouveau Stock
-                  </Button>
+                  <Button variant="outline"><Package className="w-4 h-4 mr-2" />{t('inventory.newStock')}</Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[500px]">
                   <DialogHeader>
-                    <DialogTitle>Ajouter un stock</DialogTitle>
-                    <DialogDescription>
-                      Ajoutez un stock pour un article dans un magasin
-                    </DialogDescription>
+                    <DialogTitle>{t('inventory.addStock')}</DialogTitle>
+                    <DialogDescription>{t('inventory.addStockDesc')}</DialogDescription>
                   </DialogHeader>
                   <Form {...stockForm}>
                     <form onSubmit={stockForm.handleSubmit(onAddStock)} className="space-y-4">
                       <FormField control={stockForm.control} name="item_id" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Article</FormLabel>
+                          <FormLabel>{t('inventory.item')}</FormLabel>
                           <FormControl>
-                            <Select
-                              onValueChange={(v) => field.onChange(Number(v))}
-                              value={String(field.value)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Sélectionner un article" />
-                              </SelectTrigger>
+                            <Select onValueChange={(v) => field.onChange(Number(v))} value={String(field.value)}>
+                              <SelectTrigger><SelectValue placeholder={t('inventory.selectItem')} /></SelectTrigger>
                               <SelectContent>
                                 {sortedAvailableItems.map((item: any) => (
-                                  <SelectItem key={item.id} value={String(item.id)}>
-                                    {item.name} ({item.sku})
-                                  </SelectItem>
+                                  <SelectItem key={item.id} value={String(item.id)}>{item.name} ({item.sku})</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -1089,24 +841,12 @@ Système de gestion d'inventaire
 
                       <FormField control={stockForm.control} name="store_id" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Magasin</FormLabel>
+                          <FormLabel>{t('inventory.store')}</FormLabel>
                           <FormControl>
-                            <Select
-                              onValueChange={v => field.onChange(Number(v))}
-                              value={String(field.value)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Sélectionner un magasin" />
-                              </SelectTrigger>
+                            <Select onValueChange={v => field.onChange(Number(v))} value={String(field.value)}>
+                              <SelectTrigger><SelectValue placeholder={t('inventory.selectStore')} /></SelectTrigger>
                               <SelectContent>
-                                {/* {sortedStores.map((store: any) => (
-                                  <SelectItem key={store.id} value={String(store.id)}>
-                                    {store.name}
-                                  </SelectItem>
-                                ))} */}
-                                <SelectItem key={3} value="3">
-                                  Restaurant
-                                </SelectItem>
+                                <SelectItem key={3} value="3">{t('inventory.restaurant')}</SelectItem>
                               </SelectContent>
                             </Select>
                           </FormControl>
@@ -1117,103 +857,59 @@ Système de gestion d'inventaire
                       <div className="grid grid-cols-3 gap-4">
                         <FormField control={stockForm.control} name="qty_on_hand" render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Quantité</FormLabel>
-                            <FormControl>
-                              <Input
-                                min={0}
-                                type="number"
-                                {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
-                              />
-                            </FormControl>
+                            <FormLabel>{t('inventory.quantity')}</FormLabel>
+                            <FormControl><Input min={0} type="number" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
                         <FormField control={stockForm.control} name="min_level" render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Seuil min</FormLabel>
-                            <FormControl>
-                              <Input
-                                min={0}
-                                type="number"
-                                {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
-                              />
-                            </FormControl>
+                            <FormLabel>{t('inventory.minThreshold')}</FormLabel>
+                            <FormControl><Input min={0} type="number" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
                         <FormField control={stockForm.control} name="max_level" render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Seuil max</FormLabel>
-                            <FormControl>
-                              <Input
-                                min={1}
-                                type="number"
-                                {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
-                              />
-                            </FormControl>
+                            <FormLabel>{t('inventory.maxThreshold')}</FormLabel>
+                            <FormControl><Input min={1} type="number" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
                       </div>
                       <div className="flex justify-end gap-3">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setShowStockDialog(false)}
-                        >
-                          Annuler
-                        </Button>
-                        <Button type="submit" disabled={addStockMut.isPending}>
-                          {addStockMut.isPending ? "Ajout..." : "Ajouter le stock"}
-                        </Button>
+                        <Button type="button" variant="outline" onClick={() => setShowStockDialog(false)}>{t('common.cancel')}</Button>
+                        <Button type="submit" disabled={addStockMut.isPending}>{addStockMut.isPending ? t('common.loading') : t('inventory.addStockButton')}</Button>
                       </div>
                     </form>
                   </Form>
                 </DialogContent>
               </Dialog>
 
+              {/* Edit Stock Dialog */}
               <Dialog open={editStockDialog} onOpenChange={setEditStockDialog}>
                 <DialogContent className="sm:max-w-[600px]">
                   <DialogHeader>
-                    <DialogTitle>Modifier le stock et l'article</DialogTitle>
-                    <DialogDescription>
-                      Modifiez les informations du stock et de l'article associé
-                    </DialogDescription>
+                    <DialogTitle>{t('inventory.editStockAndItem')}</DialogTitle>
+                    <DialogDescription>{t('inventory.editStockAndItemDesc')}</DialogDescription>
                   </DialogHeader>
 
                   {editingStock && (
                     <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                      <p className="text-sm font-medium text-blue-800">
-                        Article: {editingStock.item?.name || "Chargement..."}
-                      </p>
-                      <p className="text-xs text-blue-600">
-                        SKU: {editingStock.item?.sku || "N/A"} • Unité: {editingStock.item?.unit || "N/A"}
-                      </p>
+                      <p className="text-sm font-medium text-blue-800">{t('inventory.item')}: {editingStock.item?.name || t('common.loading')}</p>
+                      <p className="text-xs text-blue-600">{t('inventory.sku')}: {editingStock.item?.sku || "N/A"} • {t('inventory.unit')}: {editingStock.item?.unit || "N/A"}</p>
                     </div>
                   )}
 
                   <Form {...combinedEditForm}>
                     <form onSubmit={combinedEditForm.handleSubmit(onSaveEdit)} className="space-y-4">
                       <div className="border-b pb-4">
-                        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                          <Package className="h-4 w-4" />
-                          Informations du stock
-                        </h3>
+                        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Package className="h-4 w-4" />{t('inventory.stockInfo')}</h3>
 
                         <FormField control={combinedEditForm.control} name="qty_on_hand" render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Quantité en stock</FormLabel>
-                            <FormControl>
-                              <Input
-                                min={0}
-                                type="number"
-                                {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
-                              />
-                            </FormControl>
+                            <FormLabel>{t('inventory.stockQuantity')}</FormLabel>
+                            <FormControl><Input min={0} type="number" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
@@ -1221,30 +917,16 @@ Système de gestion d'inventaire
                         <div className="grid grid-cols-2 gap-4 mt-4">
                           <FormField control={combinedEditForm.control} name="min_level" render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Seuil minimum</FormLabel>
-                              <FormControl>
-                                <Input
-                                  min={0}
-                                  type="number"
-                                  {...field}
-                                  onChange={(e) => field.onChange(Number(e.target.value))}
-                                />
-                              </FormControl>
+                              <FormLabel>{t('inventory.minThreshold')}</FormLabel>
+                              <FormControl><Input min={0} type="number" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
 
                           <FormField control={combinedEditForm.control} name="max_level" render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Seuil maximum</FormLabel>
-                              <FormControl>
-                                <Input
-                                  min={1}
-                                  type="number"
-                                  {...field}
-                                  onChange={(e) => field.onChange(Number(e.target.value))}
-                                />
-                              </FormControl>
+                              <FormLabel>{t('inventory.maxThreshold')}</FormLabel>
+                              <FormControl><Input min={1} type="number" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
@@ -1253,37 +935,30 @@ Système de gestion d'inventaire
 
                       {editingStock && (
                         <div className="pt-2">
-                          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                            <Edit2 className="h-4 w-4" />
-                            Informations de l'article
-                          </h3>
+                          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Edit2 className="h-4 w-4" />{t('inventory.itemInfo')}</h3>
 
                           <div className="grid grid-cols-2 gap-4 mb-4">
                             <FormField control={combinedEditForm.control} name="sku" render={({ field }) => (
                               <FormItem>
-                                <FormLabel>SKU</FormLabel>
-                                <FormControl>
-                                  <Input {...field} disabled />
-                                </FormControl>
+                                <FormLabel>{t('inventory.sku')}</FormLabel>
+                                <FormControl><Input {...field} disabled /></FormControl>
                                 <FormMessage />
                               </FormItem>
                             )} />
 
                             <FormField control={combinedEditForm.control} name="unit" render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Unité</FormLabel>
+                                <FormLabel>{t('inventory.unit')}</FormLabel>
                                 <FormControl>
                                   <Select onValueChange={field.onChange} value={field.value}>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Sélectionner une unité" />
-                                    </SelectTrigger>
+                                    <SelectTrigger><SelectValue placeholder={t('inventory.selectUnit')} /></SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="piece">Pièce</SelectItem>
-                                      <SelectItem value="kg">Kilogramme</SelectItem>
-                                      <SelectItem value="g">Gramme</SelectItem>
-                                      <SelectItem value="L">Litre</SelectItem>
-                                      <SelectItem value="cl">Centilitre</SelectItem>
-                                      <SelectItem value="ml">Millilitre</SelectItem>
+                                      <SelectItem value="piece">{t('inventory.unitPiece')}</SelectItem>
+                                      <SelectItem value="kg">{t('inventory.unitKg')}</SelectItem>
+                                      <SelectItem value="g">{t('inventory.unitG')}</SelectItem>
+                                      <SelectItem value="L">{t('inventory.unitL')}</SelectItem>
+                                      <SelectItem value="cl">{t('inventory.unitCl')}</SelectItem>
+                                      <SelectItem value="ml">{t('inventory.unitMl')}</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 </FormControl>
@@ -1295,10 +970,8 @@ Système de gestion d'inventaire
                           <div className="space-y-4">
                             <FormField control={combinedEditForm.control} name="name" render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Nom de l'article</FormLabel>
-                                <FormControl>
-                                  <Input {...field} />
-                                </FormControl>
+                                <FormLabel>{t('inventory.itemName')}</FormLabel>
+                                <FormControl><Input {...field} /></FormControl>
                                 <FormMessage />
                               </FormItem>
                             )} />
@@ -1306,32 +979,16 @@ Système de gestion d'inventaire
                             <div className="grid grid-cols-2 gap-4">
                               <FormField control={combinedEditForm.control} name="cost_price" render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>Prix coûtant (Ar)</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      {...field}
-                                      onChange={(e) => field.onChange(Number(e.target.value))}
-                                    />
-                                  </FormControl>
+                                  <FormLabel>{t('inventory.costPrice')}</FormLabel>
+                                  <FormControl><Input type="number" min="0" step="0.01" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                                   <FormMessage />
                                 </FormItem>
                               )} />
 
                               <FormField control={combinedEditForm.control} name="sale_price_default" render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>Prix de vente (Ar)</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      {...field}
-                                      onChange={(e) => field.onChange(Number(e.target.value))}
-                                    />
-                                  </FormControl>
+                                  <FormLabel>{t('inventory.salePrice')}</FormLabel>
+                                  <FormControl><Input type="number" min="0" step="0.01" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                                   <FormMessage />
                                 </FormItem>
                               )} />
@@ -1339,16 +996,8 @@ Système de gestion d'inventaire
 
                             <FormField control={combinedEditForm.control} name="vat_rate" render={({ field }) => (
                               <FormItem>
-                                <FormLabel>TVA (%)</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    {...field}
-                                    onChange={(e) => field.onChange(Number(e.target.value))}
-                                  />
-                                </FormControl>
+                                <FormLabel>{t('inventory.vatRate')}</FormLabel>
+                                <FormControl><Input type="number" min="0" max="100" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
                                 <FormMessage />
                               </FormItem>
                             )} />
@@ -1356,14 +1005,9 @@ Système de gestion d'inventaire
                             <FormField control={combinedEditForm.control} name="is_active" render={({ field }) => (
                               <FormItem className="flex flex-row items-center space-x-3 space-y-0">
                                 <FormControl>
-                                  <input
-                                    type="checkbox"
-                                    checked={field.value}
-                                    onChange={(e) => field.onChange(e.target.checked)}
-                                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                                  />
+                                  <input type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
                                 </FormControl>
-                                <FormLabel className="font-normal">Article actif</FormLabel>
+                                <FormLabel className="font-normal">{t('inventory.activeItem')}</FormLabel>
                                 <FormMessage />
                               </FormItem>
                             )} />
@@ -1372,16 +1016,8 @@ Système de gestion d'inventaire
                       )}
 
                       <div className="flex justify-end gap-3 pt-4 border-t">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setEditStockDialog(false)}
-                        >
-                          Annuler
-                        </Button>
-                        <Button type="submit" disabled={editStockWithItemMut.isPending}>
-                          {editStockWithItemMut.isPending ? "Mise à jour..." : "Enregistrer les modifications"}
-                        </Button>
+                        <Button type="button" variant="outline" onClick={() => setEditStockDialog(false)}>{t('common.cancel')}</Button>
+                        <Button type="submit" disabled={editStockWithItemMut.isPending}>{editStockWithItemMut.isPending ? t('common.loading') : t('inventory.saveChanges')}</Button>
                       </div>
                     </form>
                   </Form>
@@ -1390,161 +1026,72 @@ Système de gestion d'inventaire
             </div>
           </div>
 
-          {/* Cartes de statistiques */}
+          {/* Statistics Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <Card className="lg:col-span-4">
               <CardContent className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-primary">{sortedStocksByStore.length}</div>
-                    <div className="text-sm text-muted-foreground">Articles en stock</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-destructive">{lowLevel.length}</div>
-                    <div className="text-sm text-muted-foreground">Seuils bas</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-orange-500">{outOfStock.length}</div>
-                    <div className="text-sm text-muted-foreground">Ruptures</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-success">
-                      {sortedStocksByStore.reduce((sum: any, s: any) => sum + ((s.qty || s.qty_on_hand) || 0), 0)}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Unités totales</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">
-                      {totalValue.toLocaleString()} Ar
-                    </div>
-                    <div className="text-sm text-muted-foreground">Valeur totale</div>
-                  </div>
+                  <div className="text-center"><div className="text-2xl font-bold text-primary">{sortedStocksByStore.length}</div><div className="text-sm text-muted-foreground">{t('inventory.itemsInStock')}</div></div>
+                  <div className="text-center"><div className="text-2xl font-bold text-destructive">{lowLevel.length}</div><div className="text-sm text-muted-foreground">{t('inventory.lowStock')}</div></div>
+                  <div className="text-center"><div className="text-2xl font-bold text-orange-500">{outOfStock.length}</div><div className="text-sm text-muted-foreground">{t('inventory.outOfStock')}</div></div>
+                  <div className="text-center"><div className="text-2xl font-bold text-success">{sortedStocksByStore.reduce((sum: any, s: any) => sum + ((s.qty || s.qty_on_hand) || 0), 0)}</div><div className="text-sm text-muted-foreground">{t('inventory.totalUnits')}</div></div>
+                  <div className="text-center"><div className="text-2xl font-bold text-blue-600">{totalValue.toLocaleString()} Ar</div><div className="text-sm text-muted-foreground">{t('inventory.totalValue')}</div></div>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Mouvement de stock */}
+          {/* Stock Movement */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Mouvement de stock
-              </CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" />{t('inventory.stockMovement')}</CardTitle></CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                <Select value={storeId ? String(storeId) : ""} onValueChange={(v) => setStoreId(Number(v))} >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un magasin" />
-                  </SelectTrigger>
+                <Select value={storeId ? String(storeId) : ""} onValueChange={(v) => setStoreId(Number(v))}>
+                  <SelectTrigger><SelectValue placeholder={t('inventory.selectStore')} /></SelectTrigger>
+                  <SelectContent>{sortedStores.map((st: any) => (<SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>))}</SelectContent>
+                </Select>
+
+                <Select value={selectedItem ? String(selectedItem) : ""} onValueChange={(v) => setSelectedItem(Number(v))}>
+                  <SelectTrigger><SelectValue placeholder={t('inventory.selectItem')} /></SelectTrigger>
                   <SelectContent>
-                    {sortedStores.map((st: any) => (
-                      <SelectItem key={st.id} value={String(st.id)}>
-                        {st.name}
-                      </SelectItem>
-                    ))} 
-                    {/* <SelectItem key={3} value="3">
-                      Restaurant
-                    </SelectItem> */}
+                    {sortedItems.filter((item: any) => (stocks || []).some((s: any) => (s.itemId || s.item?.id) === item.id && (s.storeId || s.store?.id) === storeId)).map((it: any) => (<SelectItem key={it.id} value={String(it.id)}>{it.name}</SelectItem>))}
                   </SelectContent>
                 </Select>
 
-                <Select
-                  value={selectedItem ? String(selectedItem) : ""}
-                  onValueChange={(v) => setSelectedItem(Number(v))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un article" />
-                  </SelectTrigger>
+                <Select value={type} onValueChange={(v) => setType(v as any)}>
+                  <SelectTrigger><SelectValue placeholder={t('inventory.movementType')} /></SelectTrigger>
                   <SelectContent>
-                    {sortedItems
-                      .filter((item: any) =>
-                        (stocks || []).some((s: any) =>
-                          (s.itemId || s.item?.id) === item.id &&
-                          (s.storeId || s.store?.id) === storeId
-                        )
-                      )
-                      .map((it: any) => (
-                        <SelectItem key={it.id} value={String(it.id)}>
-                          {it.name}
-                        </SelectItem>
-                      ))
-                    }
+                    <SelectItem value="IN">{t('inventory.movementIn')} (IN)</SelectItem>
+                    <SelectItem value="OUT">{t('inventory.movementOut')} (OUT)</SelectItem>
+                    <SelectItem value="ADJUST">{t('inventory.movementAdjust')}</SelectItem>
                   </SelectContent>
                 </Select>
 
-                <Select
-                  value={type}
-                  onValueChange={(v) => setType(v as any)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Type de mouvement" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="IN">Entrée (IN)</SelectItem>
-                    <SelectItem value="OUT">Sortie (OUT)</SelectItem>
-                    <SelectItem value="ADJUST">Ajustement</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input min={0} type="number" value={qty || ''} placeholder={t('inventory.quantity')} onChange={(e) => setQty(Number(e.target.value))} />
 
-                <Input
-                  min={0}
-                  type="number"
-                  value={qty || ''}
-                  placeholder="Quantité"
-                  onChange={(e) => setQty(Number(e.target.value))}
-                />
-
-                <Button
-                  onClick={doMove}
-                  disabled={!selectedItem || qty === 0 || moveMut.isPending}
-                >
-                  {moveMut.isPending ? "Enregistrement..." : "Valider"}
-                </Button>
+                <Button onClick={doMove} disabled={!selectedItem || qty === 0 || moveMut.isPending}>{moveMut.isPending ? t('common.loading') : t('inventory.validate')}</Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Stock et Alertes */}
+          {/* Stock and Alerts */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Liste des stocks */}
+            {/* Stock List */}
             <Card className="lg:col-span-2" ref={stockCardRef}>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <Package className="h-5 w-5" />
-                    Stock du magasin
-                  </span>
+                  <span className="flex items-center gap-2"><Package className="h-5 w-5" />{t('inventory.storeStock')}</span>
                   <div className="flex items-center gap-2">
                     <Search className="h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Rechercher un article..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-48"
-                    />
-                    {searchTerm && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSearchTerm("")}
-                        className="h-6 w-6 p-0"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <Input placeholder={t('inventory.searchItem')} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-48" />
+                    {searchTerm && (<Button variant="ghost" size="sm" onClick={() => setSearchTerm("")} className="h-6 w-6 p-0"><X className="h-4 w-4" /></Button>)}
                   </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3 overflow-y-auto ">
+                <div className="space-y-3 overflow-y-auto">
                   {sortedStocksByStore.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <div className="text-sm">Aucun stock trouvé</div>
-                      <div className="text-xs">Commencez par ajouter des articles et stocks</div>
-                    </div>
+                    <div className="text-center py-8 text-muted-foreground"><Package className="h-12 w-12 mx-auto mb-2 opacity-50" /><div className="text-sm">{t('inventory.noStockFound')}</div><div className="text-xs">{t('inventory.addItemsFirst')}</div></div>
                   ) : (
                     sortedStocksByStore.map((s: any) => {
                       const it = s.item || s.Item || (items || []).find((i: any) => i.id === s.itemId) || {};
@@ -1555,62 +1102,17 @@ Système de gestion d'inventaire
                       return (
                         <div key={s.id} className="p-4 border rounded-lg flex items-center justify-between hover:bg-accent/50 transition-colors">
                           <div className="flex-1">
-                            <div className="font-semibold flex items-center gap-2">
-                              {it.name}
-                              {out && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              Réf: {it.sku} • Qté: {s.qty || s.qty_on_hand} {it.unit} •
-                              Seuil: {s.minQty || s.min_level} / {s.maxQty || s.max_level}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              Coût: {it.costPrice?.toLocaleString?.()} Ar •
-                              Vente: {it.salePriceDefault?.toLocaleString?.()} Ar
-                            </div>
-
-                            <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
-                              <div
-                                className={`h-2 rounded-full ${out ? 'bg-red-500' :
-                                  low ? 'bg-orange-500' : 'bg-green-500'
-                                  }`}
-                                style={{ width: `${Math.min(fillPercentage, 100)}%` }}
-                              />
-                            </div>
+                            <div className="font-semibold flex items-center gap-2">{it.name}{out && <AlertTriangle className="h-4 w-4 text-red-500" />}</div>
+                            <div className="text-sm text-muted-foreground">{t('inventory.sku')}: {it.sku} • {t('inventory.quantity')}: {s.qty || s.qty_on_hand} {it.unit} • {t('inventory.threshold')}: {s.minQty || s.min_level} / {s.maxQty || s.max_level}</div>
+                            <div className="text-xs text-muted-foreground mt-1">{t('inventory.cost')}: {it.costPrice?.toLocaleString?.()} Ar • {t('inventory.sale')}: {it.salePriceDefault?.toLocaleString?.()} Ar</div>
+                            <div className="mt-2 w-full bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${out ? 'bg-red-500' : low ? 'bg-orange-500' : 'bg-green-500'}`} style={{ width: `${Math.min(fillPercentage, 100)}%` }} /></div>
                           </div>
-
                           <div className="flex flex-col items-end gap-2 ml-4">
-                            {out ? (
-                              <Badge variant="destructive">Rupture</Badge>
-                            ) : low ? (
-                              <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                                Seuil bas
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                                OK
-                              </Badge>
-                            )}
-
-                            <div className="text-xs text-muted-foreground">
-                              {fillPercentage.toFixed(0)}% rempli
-                            </div>
-
+                            {out ? <Badge variant="destructive">{t('inventory.outOfStockBadge')}</Badge> : low ? <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">{t('inventory.lowStockBadge')}</Badge> : <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{t('inventory.okBadge')}</Badge>}
+                            <div className="text-xs text-muted-foreground">{fillPercentage.toFixed(0)}% {t('inventory.filled')}</div>
                             <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => onEditClick(s)}
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => onDeleteClick(s)}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => onEditClick(s)}><Edit2 className="w-4 h-4" /></Button>
+                              <Button size="sm" variant="outline" onClick={() => onDeleteClick(s)} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
                             </div>
                           </div>
                         </div>
@@ -1621,35 +1123,18 @@ Système de gestion d'inventaire
               </CardContent>
             </Card>
 
-            {/* Alertes avec articles cliquables */}
+            {/* Alerts */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-orange-500" />
-                  Alertes & Ruptures
-                </CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-orange-500" />{t('inventory.alerts')}</CardTitle></CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {outOfStock.length > 0 && (
                     <div>
-                      <h4 className="text-sm font-semibold text-red-600 mb-2 flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4" />
-                        Ruptures de stock ({outOfStock.length})
-                      </h4>
+                      <h4 className="text-sm font-semibold text-red-600 mb-2 flex items-center gap-2"><AlertTriangle className="h-4 w-4" />{t('inventory.stockOutages')} ({outOfStock.length})</h4>
                       <div className="space-y-2">
                         {outOfStock.map((s: any) => {
                           const item = s.item || (items || []).find((i: any) => i.id === s.itemId) || {};
-                          return (
-                            <button
-                              key={s.id}
-                              onClick={() => handleAlertClick(item.name)}
-                              className="w-full text-left p-3 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors cursor-pointer"
-                            >
-                              <div className="font-medium text-red-800">{item.name}</div>
-                              <div className="text-red-600 text-xs">Stock épuisé • Réf: {item.sku}</div>
-                            </button>
-                          );
+                          return (<button key={s.id} onClick={() => handleAlertClick(item.name)} className="w-full text-left p-3 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors cursor-pointer"><div className="font-medium text-red-800">{item.name}</div><div className="text-red-600 text-xs">{t('inventory.stockExhausted')} • {t('inventory.sku')}: {item.sku}</div></button>);
                         })}
                       </div>
                     </div>
@@ -1657,61 +1142,32 @@ Système de gestion d'inventaire
 
                   {lowLevel.length > 0 && (
                     <div>
-                      <h4 className="text-sm font-semibold text-orange-600 mb-2 flex items-center gap-2">
-                        <TrendingDown className="h-4 w-4" />
-                        Seuils bas ({lowLevel.length})
-                      </h4>
+                      <h4 className="text-sm font-semibold text-orange-600 mb-2 flex items-center gap-2"><TrendingDown className="h-4 w-4" />{t('inventory.lowStockAlert')} ({lowLevel.length})</h4>
                       <div className="space-y-2">
                         {lowLevel.map((s: any) => {
                           const item = s.item || (items || []).find((i: any) => i.id === s.itemId) || {};
-                          return (
-                            <button
-                              key={s.id}
-                              onClick={() => handleAlertClick(item.name)}
-                              className="w-full text-left p-3 bg-orange-50 border border-orange-200 rounded-md hover:bg-orange-100 transition-colors cursor-pointer"
-                            >
-                              <div className="font-medium text-orange-800">{item.name}</div>
-                              <div className="text-orange-600 text-xs">
-                                Qté: {s.qty || s.qty_on_hand} • Min: {s.minQty || s.min_level} •
-                                Réf: {item.sku}
-                              </div>
-                            </button>
-                          );
+                          return (<button key={s.id} onClick={() => handleAlertClick(item.name)} className="w-full text-left p-3 bg-orange-50 border border-orange-200 rounded-md hover:bg-orange-100 transition-colors cursor-pointer"><div className="font-medium text-orange-800">{item.name}</div><div className="text-orange-600 text-xs">{t('inventory.quantity')}: {s.qty || s.qty_on_hand} • {t('inventory.min')}: {s.minQty || s.min_level} • {t('inventory.sku')}: {item.sku}</div></button>);
                         })}
                       </div>
                     </div>
                   )}
 
                   {lowLevel.length === 0 && outOfStock.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <div className="text-sm">Aucune alerte</div>
-                      <div className="text-xs">Tous les stocks sont dans les normes</div>
-                    </div>
+                    <div className="text-center py-8 text-muted-foreground"><BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" /><div className="text-sm">{t('inventory.noAlerts')}</div><div className="text-xs">{t('inventory.allStockNormal')}</div></div>
                   )}
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Derniers mouvements */}
+          {/* Recent Movements */}
           <Card>
             <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Derniers mouvements
-              </CardTitle>
+              <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" />{t('inventory.recentMovements')}</CardTitle>
               <div className="flex items-center gap-2">
                 <label className="flex items-center gap-2 cursor-pointer border rounded-md px-3 py-2 hover:bg-accent transition-colors">
-                  <Upload className="w-4 h-4" />
-                  <span className="text-sm">Importer CSV</span>
-                  <input
-                    type="file"
-                    accept=".csv"
-                    className="hidden"
-                    onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-                    disabled={importing}
-                  />
+                  <Upload className="w-4 h-4" /><span className="text-sm">{t('inventory.importCSV')}</span>
+                  <input type="file" accept=".csv" className="hidden" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} disabled={importing} />
                 </label>
               </div>
             </CardHeader>
@@ -1722,29 +1178,12 @@ Système de gestion d'inventaire
                   const st = m.store || (stores || []).find((s: any) => s.id === m.storeId) || {};
                   return (
                     <div key={m.id} className="p-3 border rounded-md flex items-center justify-between hover:bg-accent/50 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <Badge variant={
-                          m.type === 'IN' ? 'default' :
-                            m.type === 'OUT' ? 'destructive' : 'outline'
-                        }>
-                          {m.type}
-                        </Badge>
-                        <span className="font-medium">{it.name}</span>
-                        <span className="text-muted-foreground">× {m.qty}</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {st.name} • {new Date(m.createdAt || m.created_at).toLocaleString('fr-FR')}
-                      </div>
+                      <div className="flex items-center gap-3"><Badge variant={m.type === 'IN' ? 'default' : m.type === 'OUT' ? 'destructive' : 'outline'}>{m.type}</Badge><span className="font-medium">{it.name}</span><span className="text-muted-foreground">× {m.qty}</span></div>
+                      <div className="text-xs text-muted-foreground">{st.name} • {new Date(m.createdAt || m.created_at).toLocaleString('fr-FR')}</div>
                     </div>
                   );
                 })}
-                {(stock_movements || []).length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <TrendingUp className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <div className="text-sm">Aucun mouvement</div>
-                    <div className="text-xs">Les mouvements apparaîtront ici</div>
-                  </div>
-                )}
+                {(stock_movements || []).length === 0 && (<div className="text-center py-8 text-muted-foreground"><TrendingUp className="h-12 w-12 mx-auto mb-2 opacity-50" /><div className="text-sm">{t('inventory.noMovements')}</div><div className="text-xs">{t('inventory.movementsWillAppear')}</div></div>)}
               </div>
             </CardContent>
           </Card>

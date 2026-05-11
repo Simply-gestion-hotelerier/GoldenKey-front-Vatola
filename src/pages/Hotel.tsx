@@ -1,3 +1,4 @@
+// src/pages/hotel/Hotel.tsx
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -32,14 +33,18 @@ import { toast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { useAuth } from "@/lib/rbac";
+import { useTranslation } from "react-i18next";
 
-const hotel = () => {
+const Hotel = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { data: chambres = [] } = useQuery({ queryKey: ["hotel","chambres"], queryFn: () => api.get<any[]>("/hotel/rooms") });
+  const { data: chambres = [] } = useQuery({ 
+    queryKey: ["hotel", "chambres"], 
+    queryFn: () => api.get<any[]>("/hotel/rooms") 
+  });
 
-  // États pour l'exportation améliorée
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -50,14 +55,14 @@ const hotel = () => {
       cleaning: "bg-warning/10 text-warning border-warning/20",
       maintenance: "bg-muted text-muted-foreground border-muted",
       out_of_order: "bg-muted text-muted-foreground border-muted",
-    } as Record<string,string>;
+    } as Record<string, string>;
 
-    const libelles: Record<string,string> = {
-      occupied: "Occupée",
-      available: "Disponible",
-      cleaning: "Nettoyage",
-      maintenance: "Maintenance",
-      out_of_order: "Hors service",
+    const libelles: Record<string, string> = {
+      occupied: t('hotel.statusOccupied'),
+      available: t('hotel.statusAvailable'),
+      cleaning: t('hotel.statusCleaning'),
+      maintenance: t('hotel.statusMaintenance'),
+      out_of_order: t('hotel.statusOutOfOrder'),
     };
 
     const cle = statut as string;
@@ -71,7 +76,7 @@ const hotel = () => {
   const mutationReservation = useMutation({
     mutationFn: async (p: { roomId: number; guestName?: string; checkinNow?: boolean }) => {
       const maintenant = new Date();
-      const demain = new Date(maintenant.getTime() + 24*3600*1000);
+      const demain = new Date(maintenant.getTime() + 24 * 3600 * 1000);
       const cree = await api.post(`/hotel/reservations`, {
         roomId: p.roomId,
         guest: { fullName: p.guestName || "Client" },
@@ -86,19 +91,21 @@ const hotel = () => {
       }
       return id;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["hotel","chambres"] }); toast({ title: 'Réservation créée' }); },
-    onError: (e:any) => toast({ title: 'Erreur réservation', description: String(e), variant: 'destructive' }),
+    onSuccess: () => { 
+      qc.invalidateQueries({ queryKey: ["hotel", "chambres"] }); 
+      toast({ title: t('common.success') }); 
+    },
+    onError: (e: any) => toast({ title: t('common.error'), description: String(e), variant: 'destructive' }),
   });
 
   const statistiquesRapides = {
-    occupees: chambres.filter((r:any)=>r.status === 'occupied').length,
-    disponibles: chambres.filter((r:any)=>r.status === 'available').length,
-    nettoyage: chambres.filter((r:any)=>r.status === 'cleaning').length,
-    maintenance: chambres.filter((r:any)=>r.status === 'maintenance' || r.status === 'out_of_order').length,
+    occupees: chambres.filter((r: any) => r.status === 'occupied').length,
+    disponibles: chambres.filter((r: any) => r.status === 'available').length,
+    nettoyage: chambres.filter((r: any) => r.status === 'cleaning').length,
+    maintenance: chambres.filter((r: any) => r.status === 'maintenance' || r.status === 'out_of_order').length,
     total: chambres.length
   };
 
-  const [nomClient, setNomClient] = useState('');
   const [afficherNouvelleReservation, setAfficherNouvelleReservation] = useState(false);
   const [chambreSelectionnee, setChambreSelectionnee] = useState<any | null>(null);
   const [nouvelleRes, setNouvelleRes] = useState({
@@ -111,54 +118,16 @@ const hotel = () => {
     checkinImmediat: false,
   });
 
-  // Options d'exportation avec icônes et couleurs
   const exportOptions = [
-    {
-      format: 'excel',
-      label: 'Excel',
-      extension: '.xlsx',
-      icon: FileSpreadsheet,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
-      hoverColor: 'hover:bg-green-100',
-      description: 'Tableur optimisé'
-    },
-    {
-      format: 'csv',
-      label: 'CSV',
-      extension: '.csv',
-      icon: Table,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      hoverColor: 'hover:bg-blue-100',
-      description: 'Données avec séparateurs espaces'
-    },
-    {
-      format: 'txt',
-      label: 'Texte',
-      extension: '.txt',
-      icon: FileText,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
-      hoverColor: 'hover:bg-purple-100',
-      description: 'Format lisible'
-    },
-    {
-      format: 'json',
-      label: 'JSON',
-      extension: '.json',
-      icon: FileCode,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50',
-      hoverColor: 'hover:bg-orange-100',
-      description: 'Données brutes API'
-    }
+    { format: 'excel', label: t('export.excel'), extension: '.xlsx', icon: FileSpreadsheet, color: 'text-green-600', bgColor: 'bg-green-50', hoverColor: 'hover:bg-green-100', description: t('export.excelDescription') },
+    { format: 'csv', label: t('export.csv'), extension: '.csv', icon: Table, color: 'text-blue-600', bgColor: 'bg-blue-50', hoverColor: 'hover:bg-blue-100', description: t('export.csvDescription') },
+    { format: 'txt', label: t('export.txt'), extension: '.txt', icon: FileText, color: 'text-purple-600', bgColor: 'bg-purple-50', hoverColor: 'hover:bg-purple-100', description: t('export.txtDescription') },
+    { format: 'json', label: t('export.json'), extension: '.json', icon: FileCode, color: 'text-orange-600', bgColor: 'bg-orange-50', hoverColor: 'hover:bg-orange-100', description: t('export.jsonDescription') }
   ];
 
-  // Préparer les données pour l'export
   const prepareExportData = () => {
     const aujourdhui = new Date().toISOString().slice(0, 10);
-    
+
     const chambresData = chambres.map((chambre: any) => ({
       numero: chambre.number,
       type: chambre.type,
@@ -167,7 +136,6 @@ const hotel = () => {
       capacite: chambre.capacity || 2,
       etage: chambre.floor || 'RDC',
       equipements: chambre.amenities?.join(', ') || 'Standard',
-
     }));
 
     return {
@@ -185,238 +153,134 @@ const hotel = () => {
 
   const getStatusLabel = (status: string): string => {
     const labels: Record<string, string> = {
-      occupied: 'Occupée',
-      available: 'Disponible',
-      cleaning: 'Nettoyage',
-      maintenance: 'Maintenance',
-      out_of_order: 'Hors service'
+      occupied: t('hotel.statusOccupied'),
+      available: t('hotel.statusAvailable'),
+      cleaning: t('hotel.statusCleaning'),
+      maintenance: t('hotel.statusMaintenance'),
+      out_of_order: t('hotel.statusOutOfOrder')
     };
     return labels[status] || status;
   };
 
-  // Export CSV avec séparateurs espaces
   const exportToCSV = (data: any) => {
-    const csvContent = generateCSVContent(data);
-    const blob = new Blob([csvContent], { 
-      type: 'text/csv;charset=utf-8;' 
-    });
-    saveAs(blob, `gestion-hotel-${data.metadata.periode}.csv`);
-  };
+    let csvContent = "\uFEFF";
+    csvContent += `HOTEL MANAGEMENT REPORT - SIMPLY HOTEL\n`;
+    csvContent += `${t('common.date')}: ${data.metadata.periode}\n`;
+    csvContent += `${t('export.title')}: ${data.metadata.exportDate}\n`;
+    csvContent += `${t('common.user')}: ${data.metadata.exportPar}\n`;
+    csvContent += `${t('hotel.totalRooms')}: ${data.metadata.totalChambres}\n\n`;
 
-  const generateCSVContent = (data: any): string => {
-    let csvContent = "\uFEFF"; // BOM UTF-8
-    
-    // En-tête du rapport
-    csvContent += "RAPPORT DE GESTION HÔTELIÈRE - SIMPLY HOTEL\n";
-    csvContent += `Période: ${data.metadata.periode}\n`;
-    csvContent += `Exporté le: ${data.metadata.exportDate}\n`;
-    csvContent += `Par: ${data.metadata.exportPar}\n`;
-    csvContent += `Total chambres: ${data.metadata.totalChambres}\n\n`;
+    csvContent += `${t('common.status')}\n`;
+    csvContent += `${t('hotel.occupiedRooms')},${data.statistiques.occupees}\n`;
+    csvContent += `${t('hotel.availableRooms')},${data.statistiques.disponibles}\n`;
+    csvContent += `${t('hotel.cleaning')},${data.statistiques.nettoyage}\n`;
+    csvContent += `${t('hotel.maintenance')},${data.statistiques.maintenance}\n`;
+    csvContent += `${t('hotel.occupancyRate')},${data.metadata.totalChambres > 0 ? Math.round((data.statistiques.occupees / data.metadata.totalChambres) * 100) : 0}%\n\n`;
 
-    // Section statistiques avec séparateur espace
-    csvContent += "SYNTHÈSE DES STATISTIQUES\n";
-    csvContent += "Métrique          Valeur\n";
-    csvContent += `Chambres occupées ${data.statistiques.occupees}\n`;
-    csvContent += `Chambres disponibles ${data.statistiques.disponibles}\n`;
-    csvContent += `En nettoyage      ${data.statistiques.nettoyage}\n`;
-    csvContent += `En maintenance    ${data.statistiques.maintenance}\n`;
-    csvContent += `Taux d'occupation ${data.metadata.totalChambres > 0 ? Math.round((data.statistiques.occupees / data.metadata.totalChambres) * 100) : 0}%\n\n`;
+    csvContent += `${t('hotel.roomStatus')}\n`;
+    csvContent += `${t('hotel.room')},${t('hotel.type')},${t('common.status')},${t('common.price')},${t('common.capacity')}\n`;
 
-    // Section détail des chambres avec formatage aligné
-    csvContent += "DÉTAIL DES CHAMBRES\n";
-    // En-têtes avec largeur fixe
-    csvContent += "Numéro  Type            Statut      Prix      Capacité  Étage    Équipements           \n";
-    
     data.chambres.forEach((chambre: any) => {
-      // Formater chaque champ avec une largeur fixe et double espace comme séparateur
-      const ligne = [
-        chambre.numero.toString().padEnd(7),
-        chambre.type.padEnd(15),
-        chambre.statut.padEnd(11),
-        chambre.prix.toString().padEnd(9),
-        chambre.capacite.toString().padEnd(10),
-        chambre.etage.padEnd(8),
-        chambre.equipements.padEnd(22),
-  
-      ].join('  '); // Double espace comme séparateur
-      
-      csvContent += ligne + '\n';
+      csvContent += `${chambre.numero},${chambre.type},${chambre.statut},${chambre.prix},${chambre.capacite}\n`;
     });
 
-    return csvContent;
+    saveAs(new Blob([csvContent], { type: 'text/csv;charset=utf-8' }), `hotel-export-${data.metadata.periode}.csv`);
   };
 
-  // Export Excel amélioré
   const exportToExcel = (data: any) => {
     const workbook = XLSX.utils.book_new();
-    
-    // Feuille de synthèse
+
     const syntheseData = [
-      ["RAPPORT DE GESTION HÔTELIÈRE - SIMPLY HOTEL", ""],
-      ["Période", data.metadata.periode],
-      ["Exporté le", data.metadata.exportDate],
-      ["Par", data.metadata.exportPar],
-      ["Total chambres", data.metadata.totalChambres],
+      ["HOTEL MANAGEMENT REPORT - SIMPLY HOTEL", ""],
+      [t('common.date'), data.metadata.periode],
+      [t('export.title'), data.metadata.exportDate],
+      [t('common.user'), data.metadata.exportPar],
+      [t('hotel.totalRooms'), data.metadata.totalChambres],
       ["", ""],
-      ["SYNTHÈSE DES STATISTIQUES", ""],
-      ["Chambres occupées", data.statistiques.occupees],
-      ["Chambres disponibles", data.statistiques.disponibles],
-      ["En nettoyage", data.statistiques.nettoyage],
-      ["En maintenance", data.statistiques.maintenance],
-      ["Taux d'occupation", `${data.metadata.totalChambres > 0 ? Math.round((data.statistiques.occupees / data.metadata.totalChambres) * 100) : 0}%`],
-      ["", ""],
-      ["PERFORMANCE", ""],
-      ["Disponibilité", `${data.metadata.totalChambres > 0 ? Math.round(((data.statistiques.disponibles + data.statistiques.occupees) / data.metadata.totalChambres) * 100) : 0}%`]
+      [t('common.status'), ""],
+      [t('hotel.occupiedRooms'), data.statistiques.occupees],
+      [t('hotel.availableRooms'), data.statistiques.disponibles],
+      [t('hotel.cleaning'), data.statistiques.nettoyage],
+      [t('hotel.maintenance'), data.statistiques.maintenance],
+      [t('hotel.occupancyRate'), `${data.metadata.totalChambres > 0 ? Math.round((data.statistiques.occupees / data.metadata.totalChambres) * 100) : 0}%`]
     ];
 
     const syntheseWorksheet = XLSX.utils.aoa_to_sheet(syntheseData);
-    syntheseWorksheet['!cols'] = [
-      { wch: 25 },
-      { wch: 20 }
-    ];
-    XLSX.utils.book_append_sheet(workbook, syntheseWorksheet, "Synthèse");
+    syntheseWorksheet['!cols'] = [{ wch: 25 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(workbook, syntheseWorksheet, t('common.status'));
 
-    // Feuille des détails des chambres
-    const detailsHeaders = ["Numéro", "Type", "Statut", "Prix (MGA)", "Capacité", "Étage", "Équipements"];
-    const detailsData = data.chambres.map((chambre: any) => [
-      chambre.numero,
-      chambre.type,
-      chambre.statut,
-      chambre.prix,
-      chambre.capacite,
-      chambre.etage,
-      chambre.equipements,
-
-    ]);
-
+    const detailsHeaders = [t('hotel.room'), t('hotel.type'), t('common.status'), t('common.price'), t('common.capacity')];
+    const detailsData = data.chambres.map((chambre: any) => [chambre.numero, chambre.type, chambre.statut, chambre.prix, chambre.capacite]);
     const detailsWorksheet = XLSX.utils.aoa_to_sheet([detailsHeaders, ...detailsData]);
-    detailsWorksheet['!cols'] = [
-      { wch: 8 },  // Numéro
-      { wch: 15 }, // Type
-      { wch: 12 }, // Statut
-      { wch: 12 }, // Prix
-      { wch: 10 }, // Capacité
-      { wch: 8 },  // Étage
-      { wch: 25 }, // Équipements
-
-    ];
-    XLSX.utils.book_append_sheet(workbook, detailsWorksheet, "Détails Chambres");
+    XLSX.utils.book_append_sheet(workbook, detailsWorksheet, t('hotel.rooms'));
 
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    });
-
-    saveAs(blob, `gestion-hotel-${data.metadata.periode}.xlsx`);
+    saveAs(new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `hotel-export-${data.metadata.periode}.xlsx`);
   };
 
-  // Export TXT amélioré
   const exportToTXT = (data: any) => {
     const textContent = `
-RAPPORT DE GESTION HÔTELIÈRE - SIMPLY HOTEL
-=============================================
+HOTEL MANAGEMENT REPORT - SIMPLY HOTEL
+${"=".repeat(50)}
 
-INFORMATIONS GÉNÉRALES
------------------------
-Hôtel : ${data.metadata.hotelName}
-Période : ${data.metadata.periode}
-Exporté le : ${data.metadata.exportDate}
-Par : ${data.metadata.exportPar}
-Total chambres : ${data.metadata.totalChambres}
+${t('common.date')}: ${data.metadata.periode}
+${t('export.title')}: ${data.metadata.exportDate}
+${t('common.user')}: ${data.metadata.exportPar}
+${t('hotel.totalRooms')}: ${data.metadata.totalChambres}
 
-SYNTHÈSE DES STATISTIQUES
--------------------------
-• Chambres occupées : ${data.statistiques.occupees}
-• Chambres disponibles : ${data.statistiques.disponibles}
-• En nettoyage : ${data.statistiques.nettoyage}
-• En maintenance : ${data.statistiques.maintenance}
-• Taux d'occupation : ${data.metadata.totalChambres > 0 ? Math.round((data.statistiques.occupees / data.metadata.totalChambres) * 100) : 0}%
+${t('common.status')}
+${t('hotel.occupiedRooms')}: ${data.statistiques.occupees}
+${t('hotel.availableRooms')}: ${data.statistiques.disponibles}
+${t('hotel.cleaning')}: ${data.statistiques.nettoyage}
+${t('hotel.maintenance')}: ${data.statistiques.maintenance}
+${t('hotel.occupancyRate')}: ${data.metadata.totalChambres > 0 ? Math.round((data.statistiques.occupees / data.metadata.totalChambres) * 100) : 0}%
 
-DÉTAIL DES CHAMBRES
--------------------
+${t('hotel.rooms')}
 ${data.chambres.map((chambre: any, index: number) => `
-${index + 1}. Chambre ${chambre.numero}
-    Type: ${chambre.type}
-    Statut: ${chambre.statut}
-    Prix: ${new Intl.NumberFormat('fr-FR').format(chambre.prix)} MGA
-    Capacité: ${chambre.capacite} personnes
-    Étage: ${chambre.etage}
-    Équipements: ${chambre.equipements}
-
+${index + 1}. ${t('hotel.room')} ${chambre.numero}
+   ${t('hotel.type')}: ${chambre.type}
+   ${t('common.status')}: ${chambre.statut}
+   ${t('common.price')}: ${new Intl.NumberFormat('fr-FR').format(chambre.prix)} Ar
+   ${t('common.capacity')}: ${chambre.capacite} ${t('common.people')}
 `).join('\n')}
-
----
-Rapport généré automatiquement par Simply Hotel
-Système de gestion hôtelière
     `.trim();
 
-    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
-    saveAs(blob, `gestion-hotel-${data.metadata.periode}.txt`);
+    saveAs(new Blob([textContent], { type: 'text/plain;charset=utf-8' }), `hotel-export-${data.metadata.periode}.txt`);
   };
 
-  // Export JSON amélioré
   const exportToJSON = (data: any) => {
     const jsonData = {
       hotel: "Simply Hotel",
-      dateExport: new Date().toISOString(),
-      periode: data.metadata.periode,
-      exportPar: data.metadata.exportPar,
-      totalChambres: data.metadata.totalChambres,
-      statistiques: data.statistiques,
-      chambres: data.chambres
+      exportDate: new Date().toISOString(),
+      period: data.metadata.periode,
+      exportedBy: data.metadata.exportPar,
+      statistics: data.statistiques,
+      rooms: data.chambres
     };
-
-    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { 
-      type: 'application/json;charset=utf-8' 
-    });
-    saveAs(blob, `gestion-hotel-${data.metadata.periode}.json`);
+    saveAs(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' }), `hotel-export-${data.metadata.periode}.json`);
   };
 
-  // Gestion de l'export
   const exportData = async (format: string) => {
     if (chambres.length === 0) {
-      toast({
-        title: "Aucune donnée à exporter",
-        description: "Il n'y a aucune chambre à exporter",
-        variant: "destructive"
-      });
+      toast({ title: t('hotel.noDataToExport'), variant: "destructive" });
       return;
     }
 
     setIsExporting(true);
     setIsExportOpen(false);
-    
+
     try {
       const data = prepareExportData();
-
       switch (format) {
-        case 'csv':
-          exportToCSV(data);
-          break;
-        case 'excel':
-          exportToExcel(data);
-          break;
-        case 'txt':
-          exportToTXT(data);
-          break;
-        case 'json':
-          exportToJSON(data);
-          break;
-        default:
-          break;
+        case 'csv': exportToCSV(data); break;
+        case 'excel': exportToExcel(data); break;
+        case 'txt': exportToTXT(data); break;
+        case 'json': exportToJSON(data); break;
       }
-
-      toast({
-        title: "Export réussi",
-        description: `${chambres.length} chambre(s) exportée(s) en ${format.toUpperCase()}`
-      });
+      toast({ title: t('hotel.exportSuccess'), description: `${chambres.length} ${t('hotel.rooms')} ${t('export.exportSuccess')}` });
     } catch (error) {
-      console.error('Erreur export:', error);
-      toast({
-        title: 'Erreur lors de l\'exportation',
-        description: String(error),
-        variant: 'destructive'
-      });
+      console.error('Export error:', error);
+      toast({ title: t('hotel.exportError'), description: String(error), variant: 'destructive' });
     } finally {
       setIsExporting(false);
     }
@@ -425,11 +289,11 @@ Système de gestion hôtelière
   const creerReservation = async () => {
     try {
       if (!chambreSelectionnee?.id) {
-        toast({ title: 'Erreur', description: 'Aucune chambre sélectionnée', variant: 'destructive' });
+        toast({ title: t('common.error'), description: t('hotel.selectRoom'), variant: 'destructive' });
         return;
       }
       if (!nouvelleRes.nomClient || !nouvelleRes.dateArrivee || !nouvelleRes.dateDepart || !nouvelleRes.tarif) {
-        toast({ title: 'Champs manquants', description: 'Nom, arrivée, départ et tarif sont requis', variant: 'destructive' });
+        toast({ title: t('common.error'), description: t('common.required'), variant: 'destructive' });
         return;
       }
       const payload = {
@@ -448,11 +312,11 @@ Système de gestion hôtelière
       setAfficherNouvelleReservation(false);
       setChambreSelectionnee(null);
       setNouvelleRes({ nomClient: "", email: "", telephone: "", dateArrivee: "", dateDepart: "", tarif: 0, checkinImmediat: false });
-      qc.invalidateQueries({ queryKey: ["hotel","chambres"] });
-      qc.invalidateQueries({ queryKey: ["hotel","reservations"] });
-      toast({ title: 'Réservation créée' });
-    } catch (e:any) {
-      toast({ title: 'Erreur', description: String(e), variant: 'destructive' });
+      qc.invalidateQueries({ queryKey: ["hotel", "chambres"] });
+      qc.invalidateQueries({ queryKey: ["hotel", "reservations"] });
+      toast({ title: t('common.success') });
+    } catch (e: any) {
+      toast({ title: t('common.error'), description: String(e), variant: 'destructive' });
     }
   };
 
@@ -462,48 +326,31 @@ Système de gestion hôtelière
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-auto p-6">
-          {/* En-tête avec bouton d'exportation amélioré */}
           <div className="flex justify-between items-start mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-foreground mb-2">
-                Gestion Hôtel
-              </h1>
-              <p className="text-muted-foreground">
-                Arrivées • Départs • États des lieux • Inventaire
-              </p>
+              <h1 className="text-3xl font-bold text-foreground mb-2">{t('hotel.title')}</h1>
+              <p className="text-muted-foreground">{t('hotel.subtitle')}</p>
             </div>
-            
-            {/* Bouton d'exportation amélioré */}
+
             {user?.role === 'admin' && (
               <div className="relative">
                 <button
                   onClick={() => setIsExportOpen(!isExportOpen)}
                   disabled={isExporting}
-                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-blue-400 disabled:to-blue-500 text-white px-4 py-2.5 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl disabled:shadow-md font-semibold group"
+                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-blue-400 disabled:to-blue-500 text-white px-4 py-2.5 rounded-lg transition-all duration-200 shadow-lg font-semibold group"
                 >
                   {isExporting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Export en cours...</span>
-                    </>
+                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>{t('export.exporting')}</span></>
                   ) : (
-                    <>
-                      <Download className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                      <span>Exporter les données</span>
-                      <ChevronDown className="w-4 h-4 group-hover:rotate-180 transition-transform" />
-                    </>
+                    <><Download className="w-4 h-4 group-hover:scale-110 transition-transform" /><span>{t('common.export')}</span><ChevronDown className="w-4 h-4 group-hover:rotate-180 transition-transform" /></>
                   )}
                 </button>
 
                 {isExportOpen && (
-                  <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-10 overflow-hidden backdrop-blur-sm">
-                    {/* En-tête */}
+                  <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-10">
                     <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100">
-                      <p className="text-sm font-bold text-blue-900">Format d'exportation</p>
-                      <p className="text-xs text-blue-600 mt-1">Choisissez le format souhaité</p>
+                      <p className="text-sm font-bold text-blue-900">{t('export.formats')}</p>
                     </div>
-                    
-                    {/* Options d'export */}
                     <div className="p-3 space-y-2">
                       {exportOptions.map((option) => {
                         const IconComponent = option.icon;
@@ -511,39 +358,24 @@ Système de gestion hôtelière
                           <button
                             key={option.format}
                             onClick={() => exportData(option.format)}
-                            className={`flex items-center gap-4 w-full text-left p-3 rounded-lg transition-all duration-200 border border-transparent hover:border-blue-200 ${option.bgColor} ${option.hoverColor} group/option`}
+                            className={`flex items-center gap-4 w-full text-left p-3 rounded-lg transition-all duration-200 border border-transparent hover:border-blue-200 ${option.bgColor} ${option.hoverColor}`}
                           >
-                            <div className={`p-2 rounded-lg ${option.bgColor} group-hover/option:scale-110 transition-transform`}>
+                            <div className={`p-2 rounded-lg ${option.bgColor}`}>
                               <IconComponent className={`w-5 h-5 ${option.color}`} />
                             </div>
-                            
-                            <div className="flex-1 min-w-0">
+                            <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-semibold text-gray-900 group-hover/option:text-blue-700 transition-colors">
-                                  {option.label}
-                                </span>
-                                <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                                  {option.extension}
-                                </span>
+                                <span className="font-semibold text-gray-900">{option.label}</span>
+                                <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{option.extension}</span>
                               </div>
-                              <p className="text-xs text-gray-500 mt-0.5">
-                                {option.description}
-                              </p>
-                            </div>
-                            
-                            <div className="opacity-0 group-hover/option:opacity-100 transition-opacity">
-                              <Download className="w-4 h-4 text-gray-400" />
+                              <p className="text-xs text-gray-500 mt-0.5">{option.description}</p>
                             </div>
                           </button>
                         );
                       })}
                     </div>
-
-                    {/* Pied de page */}
                     <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-                      <p className="text-xs text-gray-500 text-center">
-                        {chambres.length} chambre(s) • {new Date().toLocaleDateString('fr-FR')}
-                      </p>
+                      <p className="text-xs text-gray-500 text-center">{chambres.length} {t('hotel.rooms')}</p>
                     </div>
                   </div>
                 )}
@@ -551,84 +383,49 @@ Système de gestion hôtelière
             )}
           </div>
 
-          {/* Statistiques */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <StatCard
-              title="Chambres Occupées"
-              value={`${statistiquesRapides.occupees}`}
-              icon={Bed}
-              variant="default"
-            />
-            <StatCard
-              title="Chambres Disponibles"
-              value={`${statistiquesRapides.disponibles}`}
-              icon={UserPlus}
-              variant="success"
-            />
-            <StatCard
-              title="En Nettoyage"
-              value={`${statistiquesRapides.nettoyage}`}
-              icon={UserMinus}
-              variant="warning"
-            />
-            <StatCard
-              title="Maintenance"
-              value={`${statistiquesRapides.maintenance}`}
-              icon={AlertCircle}
-              variant="warning"
-            />
+            <StatCard title={t('hotel.occupiedRooms')} value={`${statistiquesRapides.occupees}`} icon={Bed} variant="default" />
+            <StatCard title={t('hotel.availableRooms')} value={`${statistiquesRapides.disponibles}`} icon={UserPlus} variant="success" />
+            <StatCard title={t('hotel.cleaning')} value={`${statistiquesRapides.nettoyage}`} icon={UserMinus} variant="warning" />
+            <StatCard title={t('hotel.maintenance')} value={`${statistiquesRapides.maintenance}`} icon={AlertCircle} variant="warning" />
           </div>
 
-          {/* Actions & Statut des Chambres */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Actions Rapides */}
             <Card>
-              <CardHeader>
-                <CardTitle>Actions Rapides</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>{t('hotel.quickActions')}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                <Button className="w-full justify-start" variant="outline" onClick={()=>navigate('/hotel/plan')}>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Nouvelle Arrivée
+                <Button className="w-full justify-start" variant="outline" onClick={() => navigate('/hotel/plan')}>
+                  <UserPlus className="mr-2 h-4 w-4" />{t('hotel.newArrival')}
                 </Button>
-                <Button className="w-full justify-start" variant="outline" onClick={()=>navigate('/hotel/plan')}>
-                  <UserMinus className="mr-2 h-4 w-4" />
-                  Nouveau Départ
+                <Button className="w-full justify-start" variant="outline" onClick={() => navigate('/hotel/plan')}>
+                  <UserMinus className="mr-2 h-4 w-4" />{t('hotel.newDeparture')}
                 </Button>
-                <Button className="w-full justify-start" variant="outline" onClick={()=>navigate('/room-inspection')}>
-                  <ClipboardCheck className="mr-2 h-4 w-4" />
-                  État des Lieux
+                <Button className="w-full justify-start" variant="outline" onClick={() => navigate('/room-inspection')}>
+                  <ClipboardCheck className="mr-2 h-4 w-4" />{t('hotel.roomInspection')}
                 </Button>
-                <Button className="w-full justify-start" variant="outline" onClick={()=>navigate('/inventory')}>
-                  <Package className="mr-2 h-4 w-4" />
-                  Gestion Stock
+                <Button className="w-full justify-start" variant="outline" onClick={() => navigate('/inventory')}>
+                  <Package className="mr-2 h-4 w-4" />{t('hotel.stockManagement')}
                 </Button>
               </CardContent>
             </Card>
 
-            {/* Statut des Chambres */}
             <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>État des Chambres</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>{t('hotel.roomStatus')}</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {chambres.map((chambre) => (
-                    <div 
-                      key={chambre.number}
-                      className="p-4 border border-border rounded-lg hover:shadow-elegant transition-all duration-200"
-                    >
+                    <div key={chambre.number} className="p-4 border border-border rounded-lg hover:shadow-elegant transition-all duration-200">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center space-x-2">
                           <Bed className="h-4 w-4 text-primary" />
-                          <span className="font-semibold">Chambre {chambre.number}</span>
+                          <span className="font-semibold">{t('hotel.room')} {chambre.number}</span>
                         </div>
                         {getBadgeStatut(chambre.status)}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        <div>Type: {chambre.type}</div>
-                        {chambre.guest && <div>Client: {chambre.guest}</div>}
-                        {chambre.checkout && <div>Départ: {chambre.checkout}</div>}
+                        <div>{t('hotel.type')}: {chambre.type}</div>
+                        {chambre.guest && <div>{t('hotel.guest')}: {chambre.guest}</div>}
+                        {chambre.checkout && <div>{t('hotel.departure')}: {chambre.checkout}</div>}
                       </div>
                       {chambre.status === "available" && (
                         <Button
@@ -638,8 +435,8 @@ Système de gestion hôtelière
                           onClick={() => {
                             setChambreSelectionnee(chambre);
                             const aujourdhui = new Date();
-                            const demain = new Date(Date.now() + 24*3600*1000);
-                            const versYmd = (d: Date) => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+                            const demain = new Date(Date.now() + 24 * 3600 * 1000);
+                            const versYmd = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
                             setNouvelleRes((r) => ({
                               ...r,
                               nomClient: '',
@@ -653,7 +450,7 @@ Système de gestion hôtelière
                             setAfficherNouvelleReservation(true);
                           }}
                         >
-                          Réserver
+                          {t('hotel.book')}
                         </Button>
                       )}
                     </div>
@@ -662,49 +459,50 @@ Système de gestion hôtelière
               </CardContent>
             </Card>
           </div>
+
           <Dialog open={afficherNouvelleReservation} onOpenChange={setAfficherNouvelleReservation}>
             <DialogContent className="max-w-xl">
               <DialogHeader>
-                <DialogTitle>Nouvelle Réservation — {chambreSelectionnee ? `Chambre ${chambreSelectionnee.number} • ${chambreSelectionnee.type}` : 'Sélectionner une chambre'}</DialogTitle>
+                <DialogTitle>{t('hotel.newReservation')} — {chambreSelectionnee ? `${t('hotel.roomNumber', { number: chambreSelectionnee.number })} • ${chambreSelectionnee.type}` : t('hotel.selectRoom')}</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-2">
                 <div className="space-y-2">
-                  <Label htmlFor="nomClient">Nom du client</Label>
-                  <Input id="nomClient" value={nouvelleRes.nomClient} onChange={(e)=>setNouvelleRes({...nouvelleRes, nomClient: e.target.value})} />
+                  <Label htmlFor="nomClient">{t('hotel.guestName')}</Label>
+                  <Input id="nomClient" value={nouvelleRes.nomClient} onChange={(e) => setNouvelleRes({ ...nouvelleRes, nomClient: e.target.value })} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="dateArrivee">Arrivée</Label>
-                    <Input id="dateArrivee" type="date" value={nouvelleRes.dateArrivee} onChange={(e)=>setNouvelleRes({...nouvelleRes, dateArrivee: e.target.value})} />
+                    <Label htmlFor="dateArrivee">{t('hotel.arrivalDate')}</Label>
+                    <Input id="dateArrivee" type="date" value={nouvelleRes.dateArrivee} onChange={(e) => setNouvelleRes({ ...nouvelleRes, dateArrivee: e.target.value })} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="dateDepart">Départ</Label>
-                    <Input id="dateDepart" type="date" value={nouvelleRes.dateDepart} onChange={(e)=>setNouvelleRes({...nouvelleRes, dateDepart: e.target.value})} />
+                    <Label htmlFor="dateDepart">{t('hotel.departureDate')}</Label>
+                    <Input id="dateDepart" type="date" value={nouvelleRes.dateDepart} onChange={(e) => setNouvelleRes({ ...nouvelleRes, dateDepart: e.target.value })} />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="tarif">Tarif (MGA)</Label>
-                    <Input min={0} id="tarif" type="number" value={nouvelleRes.tarif} onChange={(e)=>setNouvelleRes({...nouvelleRes, tarif: Number(e.target.value) || 0})} />
+                    <Label htmlFor="tarif">{t('hotel.rate')}</Label>
+                    <Input min={0} id="tarif" type="number" value={nouvelleRes.tarif} onChange={(e) => setNouvelleRes({ ...nouvelleRes, tarif: Number(e.target.value) || 0 })} />
                   </div>
                   <div className="flex items-end space-x-2">
-                    <Checkbox id="checkinImmediat" checked={nouvelleRes.checkinImmediat} onCheckedChange={(v)=>setNouvelleRes({...nouvelleRes, checkinImmediat: Boolean(v)})} />
-                    <Label htmlFor="checkinImmediat">Check-in immédiat</Label>
+                    <Checkbox id="checkinImmediat" checked={nouvelleRes.checkinImmediat} onCheckedChange={(v) => setNouvelleRes({ ...nouvelleRes, checkinImmediat: Boolean(v) })} />
+                    <Label htmlFor="checkinImmediat">{t('hotel.immediateCheckin')}</Label>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" value={nouvelleRes.email} onChange={(e)=>setNouvelleRes({...nouvelleRes, email: e.target.value})} />
+                    <Label htmlFor="email">{t('common.email')}</Label>
+                    <Input id="email" type="email" value={nouvelleRes.email} onChange={(e) => setNouvelleRes({ ...nouvelleRes, email: e.target.value })} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="telephone">Téléphone</Label>
-                    <Input id="telephone" value={nouvelleRes.telephone} onChange={(e)=>setNouvelleRes({...nouvelleRes, telephone: e.target.value})} />
+                    <Label htmlFor="telephone">{t('common.phone')}</Label>
+                    <Input id="telephone" value={nouvelleRes.telephone} onChange={(e) => setNouvelleRes({ ...nouvelleRes, telephone: e.target.value })} />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={()=>setAfficherNouvelleReservation(false)}>Annuler</Button>
-                  <Button onClick={creerReservation}>Créer</Button>
+                  <Button variant="outline" onClick={() => setAfficherNouvelleReservation(false)}>{t('common.cancel')}</Button>
+                  <Button onClick={creerReservation}>{t('hotel.createReservation')}</Button>
                 </div>
               </div>
             </DialogContent>
@@ -715,4 +513,4 @@ Système de gestion hôtelière
   );
 };
 
-export default hotel;
+export default Hotel;

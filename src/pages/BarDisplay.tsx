@@ -1,3 +1,4 @@
+// src/pages/bar/BarDisplay.tsx
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,9 +10,11 @@ import { Wine, Clock, CheckCircle, Utensils, CheckCircle2, Loader2 } from "lucid
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export default function BarDisplay() {
   const { hasScope } = useAuth();
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [loadingLines, setLoadingLines] = useState<Set<number>>(new Set());
   
@@ -29,10 +32,10 @@ export default function BarDisplay() {
       delivered: "bg-muted/10 text-muted border-muted/20",
     };
     const labels: Record<string, string> = {
-      commanded: "Commandé",
-      preparing: "En préparation",
-      ready: "Prêt à servir",
-      delivered: "Servi",
+      commanded: t('restaurant.kds.commanded'),
+      preparing: t('restaurant.kds.preparing'),
+      ready: t('restaurant.kds.ready'),
+      delivered: t('restaurant.kds.delivered'),
     };
     return (
       <Badge variant="outline" className={styles[status]}>
@@ -58,20 +61,19 @@ export default function BarDisplay() {
     onSuccess: () => { 
       qc.invalidateQueries({ queryKey: ["orders", "pub"] }); 
       toast({ 
-        title: 'Statut boisson', 
-        description: 'Le statut de la boisson a été mis à jour.' 
+        title: t('common.success'), 
+        description: t('common.success') 
       }); 
     },
     onError: (err: any) => {
       toast({ 
-        title: 'Erreur statut', 
+        title: t('common.error'), 
         description: String(err), 
         variant: 'destructive' 
       });
     },
   });
 
-  // Filtrer les lignes qui ne sont pas "delivered"
   const activeBarLines = orders.flatMap((o: any) => 
     o.lines
       ?.filter((l: any) => (l.fireStatus || l.fire_status) !== "delivered")
@@ -81,7 +83,6 @@ export default function BarDisplay() {
       })) || []
   );
 
-  // Récupérer les lignes livrées pour afficher le message
   const deliveredLines = orders.flatMap((o: any) => 
     o.lines
       ?.filter((l: any) => (l.fireStatus || l.fire_status) === "delivered")
@@ -92,9 +93,13 @@ export default function BarDisplay() {
   );
 
   const canChange = hasScope("bar:orders:status");
-
-  // Fonction utilitaire pour vérifier si une ligne est en cours de chargement
   const isLoading = (lineId: number) => loadingLines.has(lineId);
+
+  const getOrderReference = (order: any) => {
+    if (order.table?.code) return `${t('restaurant.kds.table')} ${order.table.code}`;
+    if (order.customerName) return `${t('crm.customers')} ${order.customerName}`;
+    return `Tab ${order.tabId || order.tab_id}`;
+  };
 
   return (
     <div className="flex h-screen bg-background">
@@ -103,8 +108,8 @@ export default function BarDisplay() {
         <Header />
         <main className="flex-1 overflow-auto p-6">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold">Bar • Display</h1>
-            <p className="text-muted-foreground">Flux temps réel des commandes de boissons</p>
+            <h1 className="text-3xl font-bold">{t('nav.bar')} • Display</h1>
+            <p className="text-muted-foreground">{t('restaurant.kds.subtitle')}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -116,9 +121,10 @@ export default function BarDisplay() {
                     {col === "preparing" && <Wine className="h-5 w-5" />}
                     {col === "ready" && <CheckCircle className="h-5 w-5" />}
                     {col === "delivered" && <Utensils className="h-5 w-5" />}
-                    {col === "commanded" ? "Commandé" : 
-                     col === "preparing" ? "En préparation" : 
-                     col === "ready" ? "Prêt à servir" : "Servi"}
+                    {col === "commanded" ? t('restaurant.kds.commanded') : 
+                     col === "preparing" ? t('restaurant.kds.preparing') : 
+                     col === "ready" ? t('restaurant.kds.ready') : 
+                     t('restaurant.kds.delivered')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -127,10 +133,10 @@ export default function BarDisplay() {
                       <div className="bg-green-50 border border-green-200 rounded-md p-3 mb-3">
                         <div className="flex items-center gap-2 text-green-800">
                           <CheckCircle2 className="h-4 w-4" />
-                          <span className="text-sm font-medium">Commande livrée avec succès</span>
+                          <span className="text-sm font-medium">{t('common.success')}</span>
                         </div>
                         <p className="text-xs text-green-600 mt-1">
-                          {deliveredLines.length} boisson(s) servie(s) aujourd'hui
+                          {deliveredLines.length} {t('common.total')}
                         </p>
                       </div>
                     )}
@@ -145,10 +151,7 @@ export default function BarDisplay() {
                                 {(l.itemName || l.item_name)} × {l.qty}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                Commande #{l.order.id} • 
-                                {l.order.table?.code ? ` Table ${l.order.table.code}` : 
-                                 l.order.customerName ? ` Client ${l.order.customerName}` : 
-                                 ` Tab ${l.order.tabId || l.order.tab_id}`}
+                                {t('restaurant.kds.orderNumber', { id: l.order.id })} • {getOrderReference(l.order)}
                               </div>
                               {l.notes && (
                                 <div className="text-xs text-warning mt-1">
@@ -172,10 +175,10 @@ export default function BarDisplay() {
                                 {isLoading(l.id) ? (
                                   <>
                                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Chargement...
+                                    {t('common.loading')}
                                   </>
                                 ) : (
-                                  "Préparer"
+                                  t('restaurant.kds.markAsPreparing')
                                 )}
                               </Button>
                             )}
@@ -192,10 +195,10 @@ export default function BarDisplay() {
                                 {isLoading(l.id) ? (
                                   <>
                                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Chargement...
+                                    {t('common.loading')}
                                   </>
                                 ) : (
-                                  "Prêt à servir"
+                                  t('restaurant.kds.ready')
                                 )}
                               </Button>
                             )}
@@ -212,31 +215,10 @@ export default function BarDisplay() {
                                 {isLoading(l.id) ? (
                                   <>
                                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Chargement...
+                                    {t('common.loading')}
                                   </>
                                 ) : (
-                                  "Marquer servi"
-                                )}
-                              </Button>
-                            )}
-                            {(l.fireStatus || l.fire_status) === "delivered" && (
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                disabled={!canChange || isLoading(l.id)}
-                                onClick={() => setLineStatus.mutate({ 
-                                  orderId: l.order.id, 
-                                  lineId: l.id, 
-                                  status: "commanded" 
-                                })}
-                              >
-                                {isLoading(l.id) ? (
-                                  <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Chargement...
-                                  </>
-                                ) : (
-                                  "Réouvrir"
+                                  t('restaurant.kds.markAsDelivered')
                                 )}
                               </Button>
                             )}
@@ -246,7 +228,7 @@ export default function BarDisplay() {
                             {isLoading(l.id) && (
                               <div className="flex items-center gap-1 text-blue-600 mt-1">
                                 <Loader2 className="h-3 w-3 animate-spin" />
-                                <span>Mise à jour en cours...</span>
+                                <span>{t('common.loading')}</span>
                               </div>
                             )}
                           </div>
@@ -259,10 +241,10 @@ export default function BarDisplay() {
                         {col === "delivered" ? (
                           <div className="space-y-2">
                             <Utensils className="h-8 w-8 text-muted-foreground mx-auto opacity-50" />
-                            <div>Aucune boisson servie</div>
+                            <div>{t('common.noData')}</div>
                           </div>
                         ) : (
-                          "Aucune boisson"
+                          t('common.noData')
                         )}
                       </div>
                     )}

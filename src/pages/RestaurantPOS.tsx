@@ -4,6 +4,12 @@
 // 2. Facture A4   : idem, section info frais bancaires claire
 // 3. UI Détails   : affiche le total prélevé sur carte (info seulement)
 //                   Le système encaisse UNIQUEMENT le montant consommé
+// ────────────────────────────────────────────────────────────
+// CORRECTIONS FOLIOS CHAMBRE :
+// FIX 1 — getFolioOrders : détection robuste via payments.folioId
+// FIX 2 — FolioExpandedDetail : totalPaid inclut les paiements directs
+//          sur commandes resto (ordersPaidDirectly)
+// FIX 3 — toggleFolio : refetchFolioOrders() à chaque ouverture
 // ============================================================
 
 import { Header } from "@/components/layout/header";
@@ -149,10 +155,8 @@ const orderBalance = (o: any): number =>
   Math.max(0, orderTotal(o) - orderPaid(o));
 
 // ── FRAIS CARTE : calcul informatif uniquement ─────────────────────────────────
-// Le système n'encaisse PAS les 5%. C'est une info pour le client.
-const CARD_FEE_RATE = 0.05; // 5%
+const CARD_FEE_RATE = 0.05;
 
-/** Calcule les frais bancaires totaux (info seulement) pour les paiements par carte */
 const computeCardFees = (payments: any[]): { cardAmount: number; fees: number; totalDebited: number } => {
   const cardTotal = payments
     .filter((p: any) => p.method === "card")
@@ -238,7 +242,6 @@ function print80mm(tableCode: string, order: any) {
   lines.push(padL(bal > 0 ? "RESTE DU" : "SOLDE", fmt(bal) + " Ar", W));
   lines.push(sep);
 
-  // ── INFO FRAIS BANCAIRES (si paiement carte) ──
   if (cardAmount > 0) {
     lines.push("");
     lines.push(ctr("** INFO FRAIS BANCAIRES **", W));
@@ -336,7 +339,6 @@ function printA4(tableCode: string, order: any) {
          </tr>`
       : "";
 
-  // Bloc récapitulatif frais carte (si applicable)
   const cardFeesSummaryBlock = cardAmount > 0
     ? `<div class="card-fees-summary">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
@@ -496,7 +498,12 @@ function FolioExpandedDetail({
   const ordersTotal = folioOrders.reduce((s, o) => s + orderTotal(o), 0);
   const paidFolio = payments.reduce((s: number, p: any) => s + p.amount, 0);
   const totalCharges = (f?.total ?? res.rate * nights) + ordersTotal;
-  const totalPaid = paidFolio;
+
+  // ✅ FIX 2 — totalPaid inclut les paiements directs sur commandes resto
+  // (cas où la commande a été payée directement au resto, pas via folio hôtel)
+  const ordersPaidDirectly = folioOrders.reduce((s, o) => s + orderPaid(o), 0);
+  const totalPaid = paidFolio + ordersPaidDirectly;
+
   const balance = Math.max(0, totalCharges - totalPaid);
 
   const paidOrders = folioOrders.filter(o => {
@@ -800,7 +807,7 @@ function FolioExpandedDetail({
       {payments.length > 0 && (
         <div className="px-4 pb-2">
           <h4 className="text-sm font-semibold mb-2 mt-2 flex items-center gap-2 border-l-2 border-green-500 pl-2">
-            Paiements reçus
+            Paiements reçus (folio hôtel)
           </h4>
           <table className="w-full text-sm">
             <thead>
@@ -828,10 +835,17 @@ function FolioExpandedDetail({
             </tbody>
             <tfoot>
               <tr className="bg-muted/40">
-                <td colSpan={2} className="p-2 text-right font-semibold">Total paiements</td>
-                <td className="p-2 text-right font-bold text-green-600">{fmt(totalPaid)} Ar</td>
+                <td colSpan={2} className="p-2 text-right font-semibold">Total paiements folio</td>
+                <td className="p-2 text-right font-bold text-green-600">{fmt(paidFolio)} Ar</td>
                 <td colSpan={2}></td>
               </tr>
+              {ordersPaidDirectly > 0 && (
+                <tr className="bg-orange-50">
+                  <td colSpan={2} className="p-2 text-right font-semibold text-orange-700">Paiements directs commandes</td>
+                  <td className="p-2 text-right font-bold text-orange-700">{fmt(ordersPaidDirectly)} Ar</td>
+                  <td colSpan={2}></td>
+                </tr>
+              )}
             </tfoot>
           </table>
         </div>
@@ -949,13 +963,11 @@ export default function RestaurantPOS() {
       : Number(discountInput);
   }, [discountInput, discountType, selectedOrder]);
 
-  // Frais carte calculés sur les paiements déjà enregistrés (info pour le client)
   const currentCardFees = useMemo(() => {
     if (!selectedOrder) return { cardAmount: 0, fees: 0, totalDebited: 0 };
     return computeCardFees(selectedOrder.payments ?? []);
   }, [selectedOrder]);
 
-  // Aperçu frais si le prochain paiement est par carte
   const nextCardFeePreview = useMemo(() => {
     if (payMethod !== "card" || !payAmount || Number(payAmount) <= 0) return 0;
     return Math.round(Number(payAmount) * CARD_FEE_RATE);
@@ -1008,12 +1020,18 @@ export default function RestaurantPOS() {
     [todaysReservations]
   );
 
+  // ✅ FIX 1 — getFolioOrders : détection robuste via payments.folioId
+  // Les commandes ne stockent pas folioId directement, elles sont liées
+  // via Payment.folioId. La route GET /orders inclut maintenant payments.
   const getFolioOrders = useCallback(
     (folioId: number) =>
-      (allOrdersForFolios as any[]).filter(
-        (o: any) =>
-          (o.payments ?? []).some((p: any) => p.folioId === folioId) || o.folioId === folioId
-      ),
+      (allOrdersForFolios as any[]).filter((o: any) => {
+        // Cas 1 : champ direct (si ajouté un jour au modèle)
+        if (o.folioId === folioId) return true;
+        // Cas 2 : liaison via paiements (cas principal)
+        const payments: any[] = o.payments ?? [];
+        return payments.some((p: any) => p.folioId === folioId);
+      }),
     [allOrdersForFolios]
   );
 
@@ -1042,12 +1060,21 @@ export default function RestaurantPOS() {
     if (!f) return 0;
     return Math.max(0, (f.total ?? 0) - folioPaid(f));
   };
-  const toggleFolio = (id: number) =>
+
+  // ✅ FIX 3 — toggleFolio : refetch des commandes à chaque ouverture d'un folio
+  const toggleFolio = (id: number) => {
     setExpandedFolios(prev => {
       const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
+      if (n.has(id)) {
+        n.delete(id);
+      } else {
+        n.add(id);
+        // Rafraîchit les commandes pour avoir les payments à jour
+        refetchFolioOrders();
+      }
       return n;
     });
+  };
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
@@ -1139,7 +1166,7 @@ export default function RestaurantPOS() {
       api.post("/cash/payments", {
         department: "restaurant",
         method: p.method,
-        amount: p.amount,  // On encaisse UNIQUEMENT le montant consommé, pas les 5%
+        amount: p.amount,
         receivedAmount: p.receivedAmount ?? null,
         orderId: p.orderId,
       }),
@@ -1317,7 +1344,6 @@ export default function RestaurantPOS() {
       });
       return;
     }
-    // On n'envoie que le montant consommé au backend. Les 5% ne sont pas encaissés.
     payOrder.mutate({
       orderId: selectedOrder.id,
       amount: amt,
@@ -1355,13 +1381,17 @@ export default function RestaurantPOS() {
               <p className="text-muted-foreground">Tables → Plats → Encaissement</p>
             </div>
             <div className="flex gap-1 bg-muted rounded-lg p-1">
-              {(["pos"] as const).map(t => (
+              {(["pos", "folios"] as const).map(t => (
                 <button
                   key={t}
                   onClick={() => setActiveTab(t)}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === t ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === t
+                      ? "bg-background shadow text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                    }`}
                 >
-                  <Utensils className="inline h-4 w-4 mr-1.5 -mt-0.5" />POS Restaurant
+                  <Utensils className="inline h-4 w-4 mr-1.5 -mt-0.5" />
+                  {t === "pos" ? "POS Restaurant" : "Folios des chambres"}
                 </button>
               ))}
             </div>
@@ -1808,7 +1838,7 @@ export default function RestaurantPOS() {
         </DialogContent>
       </Dialog>
 
-      {/* ═══════════════════════════════ DIALOG DÉTAILS / PAIEMENT / REMISE ═ */}
+      {/* ═══════════════════════════════════════ DIALOG DÉTAILS / PAIEMENT / REMISE ═ */}
       <Dialog open={detailsOpen} onOpenChange={open => { if (!open) { setDetailsOpen(false); setSelectedOrder(null); } }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -2038,7 +2068,6 @@ export default function RestaurantPOS() {
                               </span>
                               <span className={`font-semibold ${p.method === "card" ? "text-blue-700" : "text-green-700"}`}>{fmt(p.amount)} Ar</span>
                             </div>
-                            {/* Frais bancaires info (ne sont PAS encaissés) */}
                             {p.method === "card" && (
                               <div className="mt-1 pt-1 border-t border-blue-100 space-y-0.5">
                                 <div className="flex justify-between text-blue-600">
@@ -2141,7 +2170,6 @@ export default function RestaurantPOS() {
                       </div>
                     )}
 
-                    {/* ── APERÇU FRAIS CARTE (avant paiement) ── */}
                     {payMethod === "card" && payAmount !== "" && Number(payAmount) > 0 && (
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
                         <div className="flex items-center gap-2 text-blue-800 font-medium text-xs">

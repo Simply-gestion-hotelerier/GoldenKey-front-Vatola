@@ -1,3 +1,4 @@
+// src/pages/cash/Cash.tsx
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,9 +13,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useTranslation } from "react-i18next";
 
 export default function Cash() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [dept, setDept] = useState<'hotel' | 'restaurant' | 'pub' | 'spa'>('restaurant');
   const [opening, setOpening] = useState<number>(50000);
@@ -25,14 +28,13 @@ export default function Cash() {
 
   const { data: sessions = [] } = useQuery({
     queryKey: ["cash", "sessions", dept],
-    queryFn: () => api.get(`/cash/sessions?dept=${dept}`), // Pas de /api ici
+    queryFn: () => api.get(`/cash/sessions?dept=${dept}`),
     refetchInterval: 10000,
   });
 
   const perDept = useMemo(() => sessions, [sessions]);
   const open = perDept.find((c: any) => c.status === 'open');
 
-  // Mutation pour créer une transaction - URL CORRIGÉE
   const transactionMut = useMutation({
     mutationFn: (transactionData: {
       userId: number;
@@ -40,35 +42,35 @@ export default function Cash() {
       prix: number;
       description: string;
       type: 'DEBIT' | 'CREDIT';
-    }) => api.post('/transactions', transactionData), // ⬅️ CORRIGÉ: /transactions au lieu de /api/transactions
+    }) => api.post('/transactions', transactionData),
     onSuccess: () => {
       toast({
-        title: 'Transaction créée',
-        description: 'La transaction a été enregistrée avec succès'
+        title: t('common.success'),
+        description: t('common.success')
       });
       setTransactionAmount("");
       setTransactionDescription("");
     },
     onError: (err: any) => {
       toast({
-        title: 'Erreur transaction',
-        description: err.response?.data?.error || 'Erreur lors de la création',
+        title: t('common.error'),
+        description: err.response?.data?.error || t('errors.generic'),
         variant: 'destructive'
       });
     },
   });
 
   const openMut = useMutation({
-    mutationFn: () => api.post(`/cash/sessions/open`, { department: dept, openingFloat: opening, openedBy: user.username }),
+    mutationFn: () => api.post(`/cash/sessions/open`, { department: dept, openingFloat: opening, openedBy: user?.username || user?.email }),
     onSuccess: () => { 
       qc.invalidateQueries({ queryKey: ["cash", "sessions", dept] }); 
       toast({ 
-        title: 'Session ouverte', 
-        description: 'La session de caisse est ouverte.' 
+        title: t('common.success'), 
+        description: t('common.success')
       }); 
     },
     onError: (err: any) => toast({ 
-      title: 'Erreur ouverture', 
+      title: t('common.error'), 
       description: String(err), 
       variant: 'destructive' 
     }),
@@ -79,12 +81,12 @@ export default function Cash() {
     onSuccess: () => { 
       qc.invalidateQueries({ queryKey: ["cash", "sessions", dept] }); 
       toast({ 
-        title: 'Session clôturée', 
-        description: 'La session a été clôturée.' 
+        title: t('common.success'), 
+        description: t('common.success')
       }); 
     },
     onError: (err: any) => toast({ 
-      title: 'Erreur clôture', 
+      title: t('common.error'), 
       description: String(err), 
       variant: 'destructive' 
     }),
@@ -93,8 +95,8 @@ export default function Cash() {
   const handleTransaction = () => {
     if (!transactionAmount || !transactionDescription) {
       toast({
-        title: 'Champs manquants',
-        description: 'Veuillez remplir tous les champs',
+        title: t('common.error'),
+        description: t('common.required'),
         variant: 'destructive'
       });
       return;
@@ -102,8 +104,8 @@ export default function Cash() {
 
     if (!user?.id) {
       toast({
-        title: 'Erreur utilisateur',
-        description: 'Utilisateur non connecté',
+        title: t('common.error'),
+        description: t('common.unauthorized'),
         variant: 'destructive'
       });
       return;
@@ -112,8 +114,8 @@ export default function Cash() {
     const amount = parseFloat(transactionAmount);
     if (isNaN(amount) || amount <= 0) {
       toast({
-        title: 'Montant invalide',
-        description: 'Le montant doit être un nombre positif',
+        title: t('common.error'),
+        description: t('common.invalidAmount'),
         variant: 'destructive'
       });
       return;
@@ -129,11 +131,11 @@ export default function Cash() {
   };
 
   const getDeptLabel = (dept: string) => {
-    const labels = {
-      hotel: 'Hôtel',
-      restaurant: 'Restaurant',
+    const labels: Record<string, string> = {
+      hotel: t('nav.hotel'),
+      restaurant: t('nav.restaurant'),
       pub: 'Pub',
-      spa: 'Spa'
+      spa: t('nav.spa')
     };
     return labels[dept as keyof typeof labels] || dept;
   };
@@ -145,15 +147,15 @@ export default function Cash() {
         <Header />
         <main className="flex-1 overflow-auto p-6 space-y-6">
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">Caisse & Clôture</h1>
+            <h1 className="text-3xl font-bold tracking-tight">{t('nav.cash')}</h1>
             <p className="text-muted-foreground">
-              Sessions de caisse par département • {getDeptLabel(dept)}
+              {t('common.status')} • {getDeptLabel(dept)}
             </p>
           </div>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle>Département</CardTitle>
+              <CardTitle>{t('common.department')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
@@ -176,14 +178,14 @@ export default function Cash() {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
                   <DollarSign className="h-5 w-5" /> 
-                  Actions de Caisse
+                  {t('common.actions')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {!open ? (
                   <div className="space-y-3">
                     <div className="space-y-2">
-                      <Label htmlFor="opening-float">Fond de caisse (Ar)</Label>
+                      <Label htmlFor="opening-float">{t('common.amount')} (Ar)</Label>
                       <Input 
                         id="opening-float"
                         min={0} 
@@ -198,13 +200,13 @@ export default function Cash() {
                       disabled={openMut.isPending}
                       className="w-full"
                     >
-                      {openMut.isPending ? "Ouverture..." : "Ouvrir la Session"}
+                      {openMut.isPending ? t('common.loading') : t('common.open')}
                     </Button>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     <div className="space-y-2">
-                      <Label htmlFor="closing-amount">Montant de clôture (Ar)</Label>
+                      <Label htmlFor="closing-amount">{t('common.amount')} (Ar)</Label>
                       <Input 
                         id="closing-amount"
                         min={0} 
@@ -220,21 +222,21 @@ export default function Cash() {
                       variant="destructive"
                       className="w-full"
                     >
-                      {closeMut.isPending ? "Clôture..." : "Clôturer la Session"}
+                      {closeMut.isPending ? t('common.loading') : t('common.close')}
                     </Button>
                   </div>
                 )}
                 
                 <div className="p-3 rounded-lg bg-muted/50">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Statut:</span>
+                    <span className="text-sm font-medium">{t('common.status')}:</span>
                     <Badge variant={open ? "default" : "secondary"}>
-                      {open ? "Session Ouverte" : "Session Fermée"}
+                      {open ? t('common.open') : t('common.closed')}
                     </Badge>
                   </div>
                   {open && (
                     <div className="mt-2 text-xs text-muted-foreground">
-                      Ouverte par {open.openedBy || open.opened_by} • 
+                      {t('common.user')}: {open.openedBy || open.opened_by} • 
                       {new Date(open.openedAt || open.opened_at).toLocaleString('fr-FR')}
                     </div>
                   )}
@@ -242,12 +244,11 @@ export default function Cash() {
               </CardContent>
             </Card>
 
-            
             <Card className="lg:col-span-2">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
                   <Calendar className="h-5 w-5" />
-                  Historique des Sessions
+                  {t('common.history')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -259,7 +260,7 @@ export default function Cash() {
                     >
                       <div className="flex items-center gap-3">
                         <Badge variant={c.status === 'open' ? "default" : "outline"}>
-                          {c.status === 'open' ? 'Ouverte' : 'Fermée'}
+                          {c.status === 'open' ? t('common.open') : t('common.closed')}
                         </Badge>
                         <div className="flex items-center gap-2 text-sm">
                           <User className="h-4 w-4 text-muted-foreground" />
@@ -267,9 +268,9 @@ export default function Cash() {
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground text-right">
-                        <div>Ouvert: {new Date(c.openedAt || c.opened_at).toLocaleString('fr-FR')}</div>
+                        <div>{t('common.open')}: {new Date(c.openedAt || c.opened_at).toLocaleString('fr-FR')}</div>
                         {(c.closedAt || c.closed_at) && (
-                          <div>Fermé: {new Date(c.closedAt || c.closed_at).toLocaleString('fr-FR')}</div>
+                          <div>{t('common.close')}: {new Date(c.closedAt || c.closed_at).toLocaleString('fr-FR')}</div>
                         )}
                       </div>
                     </div>
@@ -278,7 +279,7 @@ export default function Cash() {
                   {perDept.length === 0 && (
                     <div className="text-center py-8 text-muted-foreground">
                       <Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>Aucune session enregistrée</p>
+                      <p>{t('common.noData')}</p>
                     </div>
                   )}
                 </div>

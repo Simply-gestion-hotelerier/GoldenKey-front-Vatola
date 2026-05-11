@@ -1,4 +1,4 @@
-// pages/settings.tsx
+// src/pages/settings/Settings.tsx
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -11,11 +11,15 @@ import { useTheme } from "next-themes";
 import { useState, useRef } from "react";
 import { Camera, Upload, Check, X } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
 export default function Settings() {
   const { user, updateUser } = useAuth();
   const { theme, setTheme } = useTheme();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { i18n, t } = useTranslation();
+  const isFr = i18n.language?.startsWith("fr");
 
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
@@ -27,11 +31,10 @@ export default function Settings() {
     setIsSaving(true);
     try {
       await new Promise(resolve => setTimeout(resolve, 500));
-      
       updateUser({ name, email, phone, avatar });
-      toast.success("Profil mis à jour avec succès");
+      toast.success(t('settings.profileUpdated'));
     } catch (error) {
-      toast.error("Erreur lors de la mise à jour du profil");
+      toast.error(t('settings.profileUpdateError'));
     } finally {
       setIsSaving(false);
     }
@@ -41,10 +44,9 @@ export default function Settings() {
     const file = event.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
-        toast.error("L'image ne doit pas dépasser 2MB");
+        toast.error(t('settings.imageTooLarge'));
         return;
       }
-      
       const reader = new FileReader();
       reader.onload = (e) => {
         setAvatar(e.target?.result as string);
@@ -73,14 +75,14 @@ export default function Settings() {
         <Header />
         <main className="flex-1 overflow-auto p-6 space-y-6">
           <div>
-            <h1 className="text-3xl font-bold">Paramètres</h1>
-            <p className="text-muted-foreground">Compte • Thème</p>
+            <h1 className="text-3xl font-bold">{t('settings.title')}</h1>
+            <p className="text-muted-foreground">{t('settings.subtitle')}</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>Profil</CardTitle>
+                <CardTitle>{t('settings.profile')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Avatar Section */}
@@ -92,72 +94,38 @@ export default function Settings() {
                         {getInitials(name)}
                       </AvatarFallback>
                     </Avatar>
-                    {/* <Button
-                      size="icon"
-                      variant="outline"
-                      className="absolute -bottom-2 -right-2 h-8 w-8 rounded-full"
-                      onClick={triggerFileInput}
-                    >
-                      <Camera className="h-4 w-4" />
-                    </Button> */}
                   </div>
-                  
-                  {/* <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleAvatarUpload}
-                  />
-                   */}
                   <div className="flex space-x-2">
-                    {/* <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={triggerFileInput}
-                      className="flex items-center space-x-1"
-                    >
-                      <Upload className="h-4 w-4" />
-                      <span>Changer</span>
-                    </Button>
-                    {avatar && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={removeAvatar}
-                      >
-                        Supprimer
-                      </Button>
-                    )} */}
+                    {/* Avatar upload buttons commented out */}
                   </div>
                 </div>
 
                 {/* Form Fields */}
                 <div className="space-y-3">
                   <div>
-                    <label className="text-sm font-medium mb-1 block">Nom complet</label>
-                    <Input 
-                      placeholder="Nom" 
-                      value={name} 
+                    <label className="text-sm font-medium mb-1 block">{t('settings.fullName')}</label>
+                    <Input
+                      placeholder={t('settings.fullName')}
+                      value={name}
                       disabled
                       readOnly
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-1 block">Email</label>
-                    <Input 
-                      placeholder="Email" 
+                    <label className="text-sm font-medium mb-1 block">{t('common.email')}</label>
+                    <Input
+                      placeholder={t('common.email')}
                       type="email"
-                      value={email} 
+                      value={email}
                       disabled
                       readOnly
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-1 block">Téléphone</label>
-                    <Input 
-                      placeholder="Téléphone" 
-                      value={phone} 
+                    <label className="text-sm font-medium mb-1 block">{t('common.phone')}</label>
+                    <Input
+                      placeholder={t('common.phone')}
+                      value={phone}
                       disabled
                       readOnly
                     />
@@ -168,63 +136,49 @@ export default function Settings() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Apparence</CardTitle>
+                <CardTitle>{t('settings.appearance')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium mb-2 block">Thème</label>
+                  <label className="text-sm font-medium mb-2 block">{t('settings.theme')}</label>
                   <Select value={(theme as string) || "light"} onValueChange={(v) => setTheme(v)}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Thème"/>
+                      <SelectValue placeholder={t('settings.theme')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="light">🌞 Clair</SelectItem>
-                      <SelectItem value="dark">🌙 Sombre</SelectItem>
-                      <SelectItem value="system">💻 Système</SelectItem>
+                      <SelectItem value="light">🌞 {t('settings.light')}</SelectItem>
+                      <SelectItem value="dark">🌙 {t('settings.dark')}</SelectItem>
+                      <SelectItem value="system">💻 {t('settings.system')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Choisissez le thème qui s'applique à l'interface
+                    {t('settings.themeDescription')}
                   </p>
                 </div>
 
-                {/* <div>
-                  <label className="text-sm font-medium mb-2 block">Langue</label>
-                  <Select defaultValue="fr">
-                    <SelectTrigger>
-                      <SelectValue placeholder="Langue"/>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="fr">🇫🇷 Français</SelectItem>
-                      <SelectItem value="en">🇬🇧 English</SelectItem>
-                      <SelectItem value="es">🇪🇸 Español</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div> */}
-              </CardContent>
-            </Card>
-
-            {/* <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Préférences de notification</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="flex items-center space-x-2">
-                    <input type="checkbox" id="email-notifs" defaultChecked className="rounded" />
-                    <label htmlFor="email-notifs" className="text-sm">Notifications par email</label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input type="checkbox" id="push-notifs" defaultChecked className="rounded" />
-                    <label htmlFor="push-notifs" className="text-sm">Notifications push</label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input type="checkbox" id="sms-notifs" className="rounded" />
-                    <label htmlFor="sms-notifs" className="text-sm">Notifications SMS</label>
+                <div>
+                  <label className="text-sm font-medium mb-2 block">{t('settings.language')}</label>
+                  <div className="flex items-center gap-1 border rounded-lg p-0.5">
+                    <Button
+                      variant={isFr ? "default" : "ghost"}
+                      size="sm"
+                      className="h-7 px-2 text-xs font-semibold"
+                      onClick={() => i18n.changeLanguage("fr")}
+                    >
+                      🇫🇷 FR
+                    </Button>
+                    <Button
+                      variant={!isFr ? "default" : "ghost"}
+                      size="sm"
+                      className="h-7 px-2 text-xs font-semibold"
+                      onClick={() => i18n.changeLanguage("en")}
+                    >
+                      🇬🇧 EN
+                    </Button>
                   </div>
                 </div>
               </CardContent>
-            </Card> */}
+            </Card>
           </div>
         </main>
       </div>

@@ -1,18 +1,4 @@
-// pages/hotel/Reservations.tsx
-// ─────────────────────────────────────────────────────────────────────────────
-// LOGIQUE CARTE BANCAIRE :
-//   • La plateforme encaisse UNIQUEMENT le montant consommé (amount, sans 5%)
-//   • Les 5% sont affichés à titre informatif (gardés par la banque)
-//   • Les factures (80mm et A4) affichent le total prélevé sur la carte = amount + 5%
-//
-// SUIVI PAIEMENT :
-//   • Monnaie à rendre (espèces)
-//   • Somme reçue du client
-//   • Déjà encaissé
-//   • Reste dû
-//   • Solde restant
-// ─────────────────────────────────────────────────────────────────────────────
-
+// src/pages/hotel/Reservations.tsx
 import { useState, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -47,6 +33,7 @@ import {
   CheckCircle2, XCircle, Banknote, AlertCircle, LogIn, LogOut, Printer,
   Info, ArrowDownLeft, ArrowUpRight, Wallet, CircleDollarSign,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -82,12 +69,12 @@ interface Reservation {
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const STATUS_META: Record<ReservationStatus, { label: string; badge: string; icon: React.ElementType }> = {
-  booked: { label: "Confirmée", badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400", icon: CheckCircle2 },
-  checked_in: { label: "Arrivée", badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400", icon: LogIn },
-  checked_out: { label: "Partie", badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400", icon: LogOut },
-  cancelled: { label: "Annulée", badge: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400", icon: XCircle },
-  no_show: { label: "No-show", badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400", icon: AlertCircle },
+const STATUS_META: Record<ReservationStatus, { badge: string; icon: React.ElementType }> = {
+  booked: { badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400", icon: CheckCircle2 },
+  checked_in: { badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400", icon: LogIn },
+  checked_out: { badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400", icon: LogOut },
+  cancelled: { badge: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400", icon: XCircle },
+  no_show: { badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400", icon: AlertCircle },
 };
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
@@ -105,24 +92,20 @@ const fmtShort = (d: string) => format(new Date(d), "dd MMM", { locale: fr });
 const countNights = (ci: string, co: string) =>
   Math.max(1, Math.ceil((new Date(co).getTime() - new Date(ci).getTime()) / 86_400_000));
 
-const unitLabel = (rateMode: RateMode): string =>
-  rateMode === "per_stay" ? "séjour(s)" : "nuit(s)";
+const unitLabel = (rateMode: RateMode, t: any): string =>
+  rateMode === "per_stay" ? t('reservations.perStay') : t('reservations.perNight');
 
-const fmtRateLabel = (rate: number, rateMode: RateMode): string =>
+const fmtRateLabel = (rate: number, rateMode: RateMode, t: any): string =>
   rateMode === "per_stay"
-    ? `${fmtMGA(rate)} MGA/séjour`
-    : `${fmtMGA(rate)} MGA/nuit`;
+    ? `${fmtMGA(rate)} MGA/${t('reservations.perStayLower')}`
+    : `${fmtMGA(rate)} MGA/${t('reservations.perNightLower')}`;
 
 const computeDisplayTotal = (rate: number, checkIn: string, checkOut: string): number =>
   rate * countNights(checkIn, checkOut);
 
-// ── Calcul frais carte (5%) ───────────────────────────────────────────────────
-// cardFee   = montant des frais banque (informati­f uniquement, gardé par banque)
-// cardTotal = ce qui est prélevé sur la carte (amount + cardFee)
-const getCardFee  = (amount: number) => Math.round(amount * 0.05);
+const getCardFee = (amount: number) => Math.round(amount * 0.05);
 const getCardTotal = (amount: number) => amount + getCardFee(amount);
 
-// ── Config hôtel ──────────────────────────────────────────────────────────────
 const HOTEL = {
   name: "Mahafaly Hotel",
   address: "Antsirabe, Madagascar",
@@ -140,79 +123,68 @@ const padL   = (lbl: string, val: string, w: number) => { const gap = Math.max(1
 const fmtAr  = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
 const esc    = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const STATUS_FR: Record<string, string> = {
-  booked: "Confirmée", checked_in: "Arrivée", checked_out: "Partie",
-  cancelled: "Annulée", no_show: "No-show",
-};
-
 // ── Facture 80 mm ─────────────────────────────────────────────────────────────
-// Affiche pour chaque paiement carte :
-//   Carte (encaissé)  :  xxx Ar
-//   + Frais banque 5% :  xxx Ar  (info)
-//   = Total carte     :  xxx Ar
-function print80mm(r: Reservation) {
+function print80mm(r: Reservation, t: any) {
   const win = window.open("", "_blank"); if (!win) return;
   const n     = countNights(r.checkIn, r.checkOut);
   const total = r.folio?.total ?? r.rate * n;
   const paid  = (r.folio?.payments ?? []).reduce((s, p) => s + p.amount, 0);
   const balance = Math.max(0, total - paid);
-  const unit  = unitLabel(r.rateMode);
+  const unit  = unitLabel(r.rateMode, t);
 
   const lines: string[] = [
     ctr(HOTEL.name, W80),
     ctr(HOTEL.address, W80),
     ctr(HOTEL.phone, W80),
     sep80,
-    ctr("** FACTURE DE SEJOUR **", W80),
+    ctr(`** ${t('reservations.invoiceTitle')} **`, W80),
     sep80,
-    padL("Facture N°", `RES-${String(r.id).padStart(5, "0")}`, W80),
-    padL("Client", r.guest.fullName.substring(0, 24), W80),
-    padL("Chambre", `#${r.room.number} - ${r.room.type}`, W80),
-    padL("Arrivee", new Date(r.checkIn).toLocaleDateString("fr-FR"), W80),
-    padL("Depart", new Date(r.checkOut).toLocaleDateString("fr-FR"), W80),
-    padL("Duree", `${n} ${unit}`, W80),
-    padL("Tarif", fmtRateLabel(r.rate, r.rateMode), W80),
-    padL("Statut", STATUS_FR[r.status] ?? r.status, W80),
+    padL(t('reservations.invoiceNumber'), `RES-${String(r.id).padStart(5, "0")}`, W80),
+    padL(t('crm.customers'), r.guest.fullName.substring(0, 24), W80),
+    padL(t('hotel.room'), `#${r.room.number} - ${r.room.type}`, W80),
+    padL(t('hotel.arrivalDate'), new Date(r.checkIn).toLocaleDateString("fr-FR"), W80),
+    padL(t('hotel.departureDate'), new Date(r.checkOut).toLocaleDateString("fr-FR"), W80),
+    padL(t('reservations.duration'), `${n} ${unit}`, W80),
+    padL(t('reservations.rateLabel'), fmtRateLabel(r.rate, r.rateMode, t), W80),
+    padL(t('common.status'), STATUS_FR[r.status] ?? r.status, W80),
     dash80,
-    ctr("-- DETAIL --", W80),
+    ctr(`-- ${t('reservations.details')} --`, W80),
     dash80,
-    padL(`Hebergement x${n}`, `${fmtAr(r.rate)} Ar`, W80),
+    padL(`${t('hotel.accommodation')} x${n}`, `${fmtAr(r.rate)} Ar`, W80),
     padL("", `= ${fmtAr(total)} Ar`, W80),
     dash80,
-    padL("TOTAL", `${fmtAr(total)} Ar`, W80),
+    padL(t('reservations.total'), `${fmtAr(total)} Ar`, W80),
     dash80,
   ];
 
   if ((r.folio?.payments ?? []).length > 0) {
-    lines.push(ctr("-- PAIEMENTS --", W80));
+    lines.push(ctr(`-- ${t('reservations.payments')} --`, W80));
     r.folio!.payments.forEach(p => {
       const methodLabel = (PAYMENT_LABELS as any)[p.method] ?? p.method;
       if (p.method === "card") {
         const fee      = getCardFee(p.amount);
         const cardTot  = getCardTotal(p.amount);
-        lines.push(padL(`${methodLabel} (encaisse)`, `${fmtAr(p.amount)} Ar`, W80));
-        lines.push(padL("+ Frais banque 5% (info)", `${fmtAr(fee)} Ar`, W80));
-        lines.push(padL("= Total debite carte", `${fmtAr(cardTot)} Ar`, W80));
+        lines.push(padL(`${methodLabel} (${t('reservations.collected')})`, `${fmtAr(p.amount)} Ar`, W80));
+        lines.push(padL(`+ ${t('reservations.bankFee')} 5% (${t('reservations.info')})`, `${fmtAr(fee)} Ar`, W80));
+        lines.push(padL(`= ${t('reservations.cardTotal')}`, `${fmtAr(cardTot)} Ar`, W80));
       } else {
         lines.push(padL(methodLabel, `${fmtAr(p.amount)} Ar`, W80));
-        // Espèces : afficher monnaie rendue si applicable
         if (p.method === "cash" && p.receivedAmount && p.receivedAmount > p.amount) {
           const change = p.receivedAmount - p.amount;
-          lines.push(padL("  Recu du client", `${fmtAr(p.receivedAmount)} Ar`, W80));
-          lines.push(padL("  Monnaie rendue", `${fmtAr(change)} Ar`, W80));
+          lines.push(padL(`  ${t('reservations.receivedFromCustomer')}`, `${fmtAr(p.receivedAmount)} Ar`, W80));
+          lines.push(padL(`  ${t('reservations.changeGiven')}`, `${fmtAr(change)} Ar`, W80));
         }
       }
     });
     lines.push(dash80);
   }
 
-  // Suivi financier
-  lines.push(ctr("-- SUIVI --", W80));
-  lines.push(padL("Total facture", `${fmtAr(total)} Ar`, W80));
-  lines.push(padL("Deja encaisse", `${fmtAr(paid)} Ar`, W80));
-  lines.push(padL(balance > 0 ? "RESTE DU" : "SOLDE", `${fmtAr(balance)} Ar`, W80));
-  lines.push(sep80, "", ctr("Merci de votre confiance !", W80));
-  lines.push(ctr(`NIF : ${HOTEL.nif}`, W80));
+  lines.push(ctr(`-- ${t('reservations.financialFollowup')} --`, W80));
+  lines.push(padL(t('reservations.totalInvoice'), `${fmtAr(total)} Ar`, W80));
+  lines.push(padL(t('reservations.alreadyCollected'), `${fmtAr(paid)} Ar`, W80));
+  lines.push(padL(balance > 0 ? t('reservations.remainingDue') : t('reservations.balance'), `${fmtAr(balance)} Ar`, W80));
+  lines.push(sep80, "", ctr(t('reservations.thankYou'), W80));
+  lines.push(ctr(`${t('reservations.nif')} : ${HOTEL.nif}`, W80));
   lines.push(ctr(new Date().toLocaleString("fr-FR"), W80), "", "");
 
   win.document.write(`<html><head><meta charset="utf-8"/>
@@ -224,27 +196,22 @@ function print80mm(r: Reservation) {
 }
 
 // ── Facture A4 ────────────────────────────────────────────────────────────────
-// Pour paiement carte : ligne dédiée avec frais banque (informati­f)
-//   Carte bancaire : xxx MGA  (encaissé sans frais)
-//   Frais banque 5% (info) : xxx MGA
-//   Total prélevé carte : xxx MGA
-function printA4(r: Reservation) {
+function printA4(r: Reservation, t: any) {
   const win = window.open("", "_blank"); if (!win) return;
   const n         = countNights(r.checkIn, r.checkOut);
   const total     = r.folio?.total ?? r.rate * n;
   const paid      = (r.folio?.payments ?? []).reduce((s, p) => s + p.amount, 0);
   const balance   = Math.max(0, total - paid);
-  const unit      = unitLabel(r.rateMode);
-  const unitShort = r.rateMode === "per_stay" ? "séjour" : "nuit";
+  const unit      = unitLabel(r.rateMode, t);
+  const unitShort = r.rateMode === "per_stay" ? t('reservations.perStayLower') : t('reservations.perNightLower');
 
   const chargeRow = `<tr>
-    <td>Hébergement — ${n} ${unit} × ${fmtAr(r.rate)} MGA</td>
+    <td>${t('hotel.accommodation')} — ${n} ${unit} × ${fmtAr(r.rate)} MGA</td>
     <td style="text-align:right">${fmtAr(r.rate)} MGA/${unitShort}</td>
     <td style="text-align:right">${n}</td>
     <td style="text-align:right;font-weight:600">${fmtAr(total)} MGA</td>
   </tr>`;
 
-  // Lignes de paiement avec gestion carte
   const payRows = (r.folio?.payments ?? []).map(p => {
     const methodLabel = (PAYMENT_LABELS as any)[p.method] ?? p.method;
     if (p.method === "card") {
@@ -252,22 +219,21 @@ function printA4(r: Reservation) {
       const cardTot = getCardTotal(p.amount);
       return `
         <tr>
-          <td colspan="3" style="color:#059669">${methodLabel} — encaissé (hors frais banque)</td>
+          <td colspan="3" style="color:#059669">${methodLabel} — ${t('reservations.collectedExcludingFees')}</td>
           <td style="text-align:right;color:#059669;font-weight:600">- ${fmtAr(p.amount)} MGA</td>
         </tr>
         <tr>
           <td colspan="3" style="color:#6b7280;font-size:11px">
-            <span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:3px;font-size:10px;">ℹ INFO</span>
-            &nbsp;Frais banque 5% — gardés par la banque, non encaissés
-          </td>
+            <span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:3px;font-size:10px;">ℹ ${t('reservations.info')}</span>
+            &nbsp;${t('reservations.bankFeeInfo')}
+           </td>
           <td style="text-align:right;color:#92400e;font-size:11px">+${fmtAr(fee)} MGA</td>
         </tr>
         <tr style="background:#f0fdf4;">
-          <td colspan="3" style="font-weight:600;color:#065f46">Total prélevé sur la carte</td>
+          <td colspan="3" style="font-weight:600;color:#065f46">${t('reservations.cardTotalCharged')}</td>
           <td style="text-align:right;font-weight:700;color:#065f46">${fmtAr(cardTot)} MGA</td>
         </tr>`;
     }
-    // Espèces : afficher somme reçue et monnaie rendue
     if (p.method === "cash" && p.receivedAmount && p.receivedAmount > p.amount) {
       const change = p.receivedAmount - p.amount;
       return `
@@ -276,8 +242,8 @@ function printA4(r: Reservation) {
           <td style="text-align:right;color:#059669;font-weight:600">- ${fmtAr(p.amount)} MGA</td>
         </tr>
         <tr style="font-size:11px;color:#6b7280">
-          <td colspan="3">↳ Reçu du client : ${fmtAr(p.receivedAmount)} MGA</td>
-          <td style="text-align:right">Monnaie : ${fmtAr(change)} MGA</td>
+          <td colspan="3">↳ ${t('reservations.receivedFromCustomer')} : ${fmtAr(p.receivedAmount)} MGA</td>
+          <td style="text-align:right">${t('reservations.change')} : ${fmtAr(change)} MGA</td>
         </tr>`;
     }
     return `<tr>
@@ -319,7 +285,6 @@ function printA4(r: Reservation) {
   tfoot td:not(:first-child) { text-align:right; }
   .balance { padding:12px 16px; border-radius:8px; text-align:right;
              font-size:14px; font-weight:700; margin-bottom:20px; ${balColor} }
-  /* Suivi financier */
   .suivi { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px; }
   .suivi-box { background:#f8f9fc; border-radius:6px; padding:10px 12px; text-align:center; }
   .suivi-box .lbl { font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; margin-bottom:4px; }
@@ -338,82 +303,79 @@ function printA4(r: Reservation) {
     <div class="hotel-sub">${HOTEL.address}<br/>${HOTEL.phone} · ${HOTEL.email}</div>
   </div>
   <div class="inv-num">
-    <h2>FACTURE N° RES-${String(r.id).padStart(5, "0")}</h2>
-    <p>Émise le ${new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })}</p>
+    <h2>${t('reservations.invoice')} N° RES-${String(r.id).padStart(5, "0")}</h2>
+    <p>${t('reservations.issuedOn')} ${new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })}</p>
   </div>
 </div>
 
 <div class="info-grid">
   <div class="info-box">
-    <h3>Client</h3>
+    <h3>${t('crm.customers')}</h3>
     <div class="info-row"><span>${r.guest.fullName}</span></div>
-    ${r.guest.phone ? `<div class="info-row"><span>Tél.</span><span>${r.guest.phone}</span></div>` : ""}
-    ${r.guest.email ? `<div class="info-row"><span>Email</span><span>${r.guest.email}</span></div>` : ""}
+    ${r.guest.phone ? `<div class="info-row"><span>${t('common.phone')}</span><span>${r.guest.phone}</span></div>` : ""}
+    ${r.guest.email ? `<div class="info-row"><span>${t('common.email')}</span><span>${r.guest.email}</span></div>` : ""}
   </div>
   <div class="info-box">
-    <h3>Séjour</h3>
-    <div class="info-row"><span>Chambre</span><span>#${r.room.number} — ${r.room.type}</span></div>
-    <div class="info-row"><span>Arrivée</span><span>${new Date(r.checkIn).toLocaleDateString("fr-FR")}</span></div>
-    <div class="info-row"><span>Départ</span><span>${new Date(r.checkOut).toLocaleDateString("fr-FR")}</span></div>
-    <div class="info-row"><span>Durée</span><span>${n} ${unit}</span></div>
-    <div class="info-row"><span>Tarif</span><span>${fmtRateLabel(r.rate, r.rateMode)}</span></div>
-    <div class="info-row"><span>Statut</span><span>${STATUS_FR[r.status] ?? r.status}</span></div>
+    <h3>${t('reservations.stay')}</h3>
+    <div class="info-row"><span>${t('hotel.room')}</span><span>#${r.room.number} — ${r.room.type}</span></div>
+    <div class="info-row"><span>${t('hotel.arrivalDate')}</span><span>${new Date(r.checkIn).toLocaleDateString("fr-FR")}</span></div>
+    <div class="info-row"><span>${t('hotel.departureDate')}</span><span>${new Date(r.checkOut).toLocaleDateString("fr-FR")}</span></div>
+    <div class="info-row"><span>${t('reservations.duration')}</span><span>${n} ${unit}</span></div>
+    <div class="info-row"><span>${t('reservations.rateLabel')}</span><span>${fmtRateLabel(r.rate, r.rateMode, t)}</span></div>
+    <div class="info-row"><span>${t('common.status')}</span><span>${STATUS_FR[r.status] ?? r.status}</span></div>
   </div>
 </div>
 
 ${(r.folio?.payments ?? []).some(p => p.method === "card") ? `
 <div class="card-info-banner">
-  ⚠️ <strong>Paiement par carte bancaire :</strong>
-  Les frais bancaires de 5% sont à la charge du client et sont conservés par la banque.
-  La plateforme encaisse uniquement le montant consommé (hors frais).
-  Le total prélevé sur la carte inclut ces frais.
+  ⚠️ <strong>${t('reservations.cardPaymentInfo')}</strong>
+  ${t('reservations.cardPaymentDescription')}
 </div>` : ""}
 
-<div class="section-title">Détail des prestations</div>
+<div class="section-title">${t('reservations.servicesDetail')}</div>
 <table>
   <thead>
     <tr>
-      <th>Désignation</th>
-      <th style="text-align:right">Prix/${unitShort}</th>
-      <th style="text-align:right">${r.rateMode === "per_stay" ? "Séjours" : "Nuits"}</th>
-      <th style="text-align:right">Total</th>
+      <th>${t('reservations.description')}</th>
+      <th style="text-align:right">${t('reservations.unitPrice')}/${unitShort}</th>
+      <th style="text-align:right">${r.rateMode === "per_stay" ? t('reservations.stays') : t('reservations.nights')}</th>
+      <th style="text-align:right">${t('reservations.total')}</th>
     </tr>
   </thead>
   <tbody>${chargeRow}${payRows}</tbody>
   <tfoot>
     <tr>
-      <td colspan="3" style="text-align:right">TOTAL FACTURÉ</td>
+      <td colspan="3" style="text-align:right">${t('reservations.totalInvoiced')}</td>
       <td>${fmtAr(total)} MGA</td>
     </tr>
     ${paid > 0 ? `<tr>
-      <td colspan="3" style="text-align:right;color:#059669">TOTAL ENCAISSÉ (hors frais carte)</td>
+      <td colspan="3" style="text-align:right;color:#059669">${t('reservations.totalCollectedExcludingFees')}</td>
       <td style="color:#059669">- ${fmtAr(paid)} MGA</td>
     </tr>` : ""}
   </tfoot>
 </table>
 
-<!-- Suivi financier -->
-<div class="section-title">Suivi du règlement</div>
+<div class="section-title">${t('reservations.paymentFollowup')}</div>
 <div class="suivi">
   <div class="suivi-box">
-    <div class="lbl">Total facturé</div>
+    <div class="lbl">${t('reservations.totalInvoiced')}</div>
     <div class="val" style="color:#0f2744">${fmtAr(total)} MGA</div>
   </div>
   <div class="suivi-box">
-    <div class="lbl">Déjà encaissé</div>
+    <div class="lbl">${t('reservations.alreadyCollected')}</div>
     <div class="val" style="color:#059669">${fmtAr(paid)} MGA</div>
   </div>
   <div class="suivi-box">
-    <div class="lbl">${balance > 0 ? "Reste dû" : "Solde"}</div>
+    <div class="lbl">${balance > 0 ? t('reservations.remainingDue') : t('reservations.balance')}</div>
     <div class="val" style="color:${balance > 0 ? "#991b1b" : "#065f46"}">${fmtAr(balance)} MGA</div>
   </div>
 </div>
 
-<div class="balance">${balance > 0 ? `Solde restant : ${fmtAr(balance)} MGA` : "✓ Compte soldé"}</div>
+<div class="balance">${balance > 0 ? `${t('reservations.remainingBalance')} : ${fmtAr(balance)} MGA` : `✓ ${t('reservations.accountSettled')}`}</div>
 
 <div class="footer">
-  ${HOTEL.name} · NIF ${HOTEL.nif} · ${HOTEL.email} · ${HOTEL.phone}<br/>
-  Imprimée le ${new Date().toLocaleString("fr-FR")} · Réservation #${r.id}
+  ${HOTEL.name} · ${t('reservations.nif')} ${HOTEL.nif} · ${HOTEL.email} · ${HOTEL.phone}<br/>
+  ${t('reservations.printedOn')} ${new Date().toLocaleString("fr-FR")} · ${t('reservations.reservation')} #${r.id}
 </div>
 
 </body></html>`);
@@ -422,46 +384,57 @@ ${(r.folio?.payments ?? []).some(p => p.method === "card") ? `
 
 // ── StatusBadge ───────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: ReservationStatus }) {
-  const { label, badge, icon: Icon } = STATUS_META[status];
+function StatusBadge({ status, t }: { status: ReservationStatus; t: any }) {
+  const { badge, icon: Icon } = STATUS_META[status];
+  const statusLabels: Record<ReservationStatus, string> = {
+    booked: t('reservations.statusBooked'),
+    checked_in: t('reservations.statusCheckedIn'),
+    checked_out: t('reservations.statusCheckedOut'),
+    cancelled: t('reservations.statusCancelled'),
+    no_show: t('reservations.statusNoShow'),
+  };
   return (
     <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${badge}`}>
-      <Icon className="w-3 h-3" />{label}
+      <Icon className="w-3 h-3" />{statusLabels[status]}
     </span>
   );
 }
 
-// ── CardFeeBanner ─────────────────────────────────────────────────────────────
-// Affichage informatif frais bancaires 5%
+const STATUS_FR: Record<string, string> = {
+  booked: "Confirmée", checked_in: "Arrivée", checked_out: "Partie",
+  cancelled: "Annulée", no_show: "No-show",
+};
 
-function CardFeeBanner({ amount }: { amount: number }) {
+// ── CardFeeBanner ─────────────────────────────────────────────────────────────
+
+function CardFeeBanner({ amount, t }: { amount: number; t: any }) {
   const fee      = getCardFee(amount);
   const cardTot  = getCardTotal(amount);
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-xs space-y-1.5">
       <div className="flex items-center gap-1.5 font-semibold text-amber-700 dark:text-amber-400">
         <Info className="h-3.5 w-3.5 shrink-0" />
-        Paiement par carte bancaire
+        {t('reservations.cardPayment')}
       </div>
       <div className="grid grid-cols-3 gap-2 pt-1">
         <div className="text-center rounded bg-white dark:bg-white/5 border border-amber-100 dark:border-amber-800 p-2">
-          <p className="text-[10px] text-muted-foreground mb-0.5">Encaissé</p>
+          <p className="text-[10px] text-muted-foreground mb-0.5">{t('reservations.collected')}</p>
           <p className="font-bold text-sm text-emerald-600 dark:text-emerald-400 tabular-nums">{fmtMGA(amount)}</p>
           <p className="text-[10px] text-muted-foreground">MGA</p>
         </div>
         <div className="text-center rounded bg-white dark:bg-white/5 border border-amber-100 dark:border-amber-800 p-2">
-          <p className="text-[10px] text-muted-foreground mb-0.5">Frais banque</p>
+          <p className="text-[10px] text-muted-foreground mb-0.5">{t('reservations.bankFee')}</p>
           <p className="font-bold text-sm text-amber-600 dark:text-amber-400 tabular-nums">+{fmtMGA(fee)}</p>
-          <p className="text-[10px] text-muted-foreground">MGA (info)</p>
+          <p className="text-[10px] text-muted-foreground">MGA ({t('reservations.info')})</p>
         </div>
         <div className="text-center rounded bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 p-2">
-          <p className="text-[10px] text-amber-700 dark:text-amber-400 mb-0.5">Total carte</p>
+          <p className="text-[10px] text-amber-700 dark:text-amber-400 mb-0.5">{t('reservations.cardTotal')}</p>
           <p className="font-bold text-sm text-amber-700 dark:text-amber-300 tabular-nums">{fmtMGA(cardTot)}</p>
-          <p className="text-[10px] text-amber-600 dark:text-amber-500">MGA prélevé</p>
+          <p className="text-[10px] text-amber-600 dark:text-amber-500">MGA {t('reservations.charged')}</p>
         </div>
       </div>
       <p className="text-[10px] text-muted-foreground italic">
-        Les 5% de frais bancaires sont conservés par la banque — non encaissés par la plateforme.
+        {t('reservations.bankFeeNote')}
       </p>
     </div>
   );
@@ -469,23 +442,19 @@ function CardFeeBanner({ amount }: { amount: number }) {
 
 // ── FolioPanel ────────────────────────────────────────────────────────────────
 
-function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpdate: () => void }) {
+function FolioPanel({ reservation, onUpdate, t }: { reservation: Reservation; onUpdate: () => void; t: any }) {
   const [method,   setMethod]   = useState<PaymentMethod>("cash");
-  const [received, setReceived] = useState(""); // champ unique : somme reçue du client
+  const [received, setReceived] = useState("");
   const folio = reservation.folio;
 
-  // ── Calculs automatiques depuis "received" ────────────────────────────────
   const balance    = folio?.balance ?? 0;
   const recNum     = parseInt(received) || 0;
 
-  // Espèces : encaisse min(reçu, balance), rend la monnaie si excédent
   const encaisse   = method === "cash"   ? Math.min(recNum, balance) : 0;
   const change     = method === "cash"   ? Math.max(0, recNum - balance) : 0;
-  // Carte : le champ "received" est le montant à encaisser directement
   const cardAmt    = method === "card"   ? recNum : 0;
   const cardFeePreview   = method === "card" ? getCardFee(cardAmt) : 0;
   const cardTotalPreview = method === "card" ? getCardTotal(cardAmt) : 0;
-  // Autres modes (mobile, bank) : encaisse = reçu
   const otherAmt   = method !== "cash" && method !== "card" ? Math.min(recNum, balance) : 0;
 
   const amountToPost =
@@ -504,17 +473,17 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
       folioId: folio!.id,
     }),
     onSuccess: (data: any) => {
-      let desc = `${fmtMGA(amountToPost)} MGA encaissés`;
+      let desc = `${fmtMGA(amountToPost)} MGA ${t('reservations.collected')}`;
       if (method === "card" && data?.cardFee)
-        desc += ` · Frais banque ${fmtMGA(data.cardFee)} MGA (info) · Total carte ${fmtMGA(data.cardTotal)} MGA`;
+        desc += ` · ${t('reservations.bankFee')} ${fmtMGA(data.cardFee)} MGA (${t('reservations.info')}) · ${t('reservations.cardTotal')} ${fmtMGA(data.cardTotal)} MGA`;
       if (method === "cash" && change > 0)
-        desc += ` · Monnaie à rendre : ${fmtMGA(change)} MGA`;
-      toast({ title: "Paiement enregistré", description: desc });
+        desc += ` · ${t('reservations.changeToGive')} : ${fmtMGA(change)} MGA`;
+      toast({ title: t('reservations.paymentRecorded'), description: desc });
       setReceived("");
       onUpdate();
     },
     onError: (e: any) =>
-      toast({ title: "Erreur paiement", description: String(e), variant: "destructive" }),
+      toast({ title: t('common.error'), description: String(e), variant: "destructive" }),
   });
 
   const totalPaid = (folio?.payments ?? []).reduce((s, p) => s + p.amount, 0);
@@ -528,18 +497,17 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
     !isCardOver &&
     !pay.isPending;
 
-  if (!folio) return <p className="text-sm text-muted-foreground py-2">Folio non disponible.</p>;
+  if (!folio) return <p className="text-sm text-muted-foreground py-2">{t('reservations.folioUnavailable')}</p>;
 
   return (
     <div className="space-y-4">
 
-      {/* ── Suivi financier ── */}
       <div className="grid grid-cols-3 gap-2">
         {[
-          { label: "Total facturé",  value: folio.total,  cls: "text-foreground",           Icon: CircleDollarSign },
-          { label: "Déjà encaissé", value: totalPaid,    cls: "text-emerald-600 dark:text-emerald-400", Icon: ArrowDownLeft },
+          { label: t('reservations.totalInvoiced'),  value: folio.total,  cls: "text-foreground",           Icon: CircleDollarSign },
+          { label: t('reservations.alreadyCollected'), value: totalPaid,    cls: "text-emerald-600 dark:text-emerald-400", Icon: ArrowDownLeft },
           {
-            label: balance > 0 ? "Reste dû" : "Solde",
+            label: balance > 0 ? t('reservations.remainingDue') : t('reservations.balance'),
             value: balance,
             cls: balance > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400",
             Icon: balance > 0 ? ArrowUpRight : CheckCircle2,
@@ -555,10 +523,9 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
         ))}
       </div>
 
-      {/* ── Historique des paiements ── */}
       {folio.payments.length > 0 && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Historique</p>
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">{t('reservations.history')}</p>
           <div className="space-y-1.5 max-h-40 overflow-y-auto">
             {folio.payments.map(p => {
               const methodLabel = PAYMENT_LABELS[p.method as PaymentMethod] ?? p.method;
@@ -588,17 +555,17 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
                   {isCard && (
                     <div className="space-y-1 pl-5">
                       <div className="flex justify-between text-[11px] text-muted-foreground">
-                        <span>Montant encaissé (hors frais)</span>
+                        <span>{t('reservations.collectedExcludingFees')}</span>
                         <span className="tabular-nums">{fmtMGA(p.amount)} MGA</span>
                       </div>
                       <div className="flex justify-between text-[11px] text-amber-600 dark:text-amber-500">
                         <span className="flex items-center gap-1">
-                          <Info className="h-3 w-3" /> Frais banque 5% (info)
+                          <Info className="h-3 w-3" /> {t('reservations.bankFeeInfoShort')}
                         </span>
                         <span className="tabular-nums">+{fmtMGA(fee)} MGA</span>
                       </div>
                       <div className="flex justify-between text-[11px] font-semibold text-amber-700 dark:text-amber-400 border-t border-amber-200 dark:border-amber-800 pt-1">
-                        <span>Total prélevé sur la carte</span>
+                        <span>{t('reservations.cardTotalCharged')}</span>
                         <span className="tabular-nums">{fmtMGA(cardTot)} MGA</span>
                       </div>
                     </div>
@@ -606,12 +573,12 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
                   {isCash && p.receivedAmount && (
                     <div className="space-y-1 pl-5">
                       <div className="flex justify-between text-[11px] text-muted-foreground">
-                        <span>Somme reçue du client</span>
+                        <span>{t('reservations.receivedFromCustomer')}</span>
                         <span className="tabular-nums">{fmtMGA(p.receivedAmount)} MGA</span>
                       </div>
                       {cashChange > 0 && (
                         <div className="flex justify-between text-[11px] font-semibold text-blue-600 dark:text-blue-400">
-                          <span>Monnaie rendue</span>
+                          <span>{t('reservations.changeGiven')}</span>
                           <span className="tabular-nums">{fmtMGA(cashChange)} MGA</span>
                         </div>
                       )}
@@ -624,20 +591,18 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
         </div>
       )}
 
-      {/* ── Formulaire ── */}
       {folio.closedAt ? (
         <p className="text-sm text-muted-foreground text-center py-2">
-          Folio clôturé le {fmtDate(folio.closedAt)}
+          {t('reservations.folioClosedOn')} {fmtDate(folio.closedAt)}
         </p>
       ) : balance <= 0 ? (
         <p className="text-sm text-emerald-600 font-medium text-center py-2 flex items-center justify-center gap-2">
-          <CheckCircle2 className="h-4 w-4" /> Solde réglé intégralement
+          <CheckCircle2 className="h-4 w-4" /> {t('reservations.balanceSettled')}
         </p>
       ) : (
         <div className="space-y-3">
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Encaisser un paiement</p>
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('reservations.collectPayment')}</p>
 
-          {/* Mode de paiement */}
           <Select value={method} onValueChange={v => { setMethod(v as PaymentMethod); setReceived(""); }}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -649,12 +614,11 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
             </SelectContent>
           </Select>
 
-          {/* Champ unique : label adapté au mode */}
           <div>
             <label className="text-sm font-medium text-foreground block mb-1.5">
-              {method === "cash" ? "Somme reçue du client (MGA)" :
-               method === "card" ? "Montant à encaisser (MGA)" :
-               "Montant reçu (MGA)"}
+              {method === "cash" ? t('reservations.amountReceivedFromCustomer') :
+               method === "card" ? t('reservations.amountToCollect') :
+               t('reservations.amountReceived')}
             </label>
             <div className="relative">
               <Input
@@ -662,9 +626,9 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
                 min={1}
                 max={method === "card" ? balance : undefined}
                 placeholder={
-                  method === "cash" ? `Ex : ${fmtMGA(balance)} MGA ou plus` :
-                  method === "card" ? `Max ${fmtMGA(balance)} MGA` :
-                  `Montant (max ${fmtMGA(balance)} MGA)`
+                  method === "cash" ? `${t('reservations.example')} : ${fmtMGA(balance)} MGA ${t('reservations.orMore')}` :
+                  method === "card" ? `${t('reservations.max')} ${fmtMGA(balance)} MGA` :
+                  `${t('reservations.amount')} (${t('reservations.max')} ${fmtMGA(balance)} MGA)`
                 }
                 value={received}
                 onChange={e => setReceived(e.target.value)}
@@ -674,97 +638,90 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
             </div>
           </div>
 
-          {/* Récapitulatif calculé automatiquement */}
           {recNum > 0 && (
             <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2 text-xs">
               <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">
-                Récapitulatif
+                {t('reservations.summary')}
               </p>
 
-              {/* Espèces */}
               {method === "cash" && (
                 <>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Reste dû</span>
+                    <span className="text-muted-foreground">{t('reservations.remainingDue')}</span>
                     <span className="font-semibold tabular-nums">{fmtMGA(balance)} MGA</span>
                   </div>
                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-                    <span>Montant encaissé</span>
+                    <span>{t('reservations.collectedAmount')}</span>
                     <span className="font-semibold tabular-nums">- {fmtMGA(encaisse)} MGA</span>
                   </div>
                   {change > 0 && (
                     <div className="flex justify-between text-blue-600 dark:text-blue-400 font-semibold">
-                      <span>Monnaie à rendre</span>
+                      <span>{t('reservations.changeToGive')}</span>
                       <span className="tabular-nums">{fmtMGA(change)} MGA</span>
                     </div>
                   )}
                 </>
               )}
 
-              {/* Carte */}
               {method === "card" && (
                 <>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Reste dû</span>
+                    <span className="text-muted-foreground">{t('reservations.remainingDue')}</span>
                     <span className="font-semibold tabular-nums">{fmtMGA(balance)} MGA</span>
                   </div>
                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-                    <span>Montant encaissé</span>
+                    <span>{t('reservations.collectedAmount')}</span>
                     <span className="font-semibold tabular-nums">- {fmtMGA(cardAmt)} MGA</span>
                   </div>
                   <div className="flex justify-between text-amber-600 dark:text-amber-500">
                     <span className="flex items-center gap-1">
-                      <Info className="h-3 w-3" /> Frais banque 5% (info)
+                      <Info className="h-3 w-3" /> {t('reservations.bankFeeInfoShort')}
                     </span>
                     <span className="tabular-nums">+ {fmtMGA(cardFeePreview)} MGA</span>
                   </div>
                   <div className="flex justify-between font-semibold text-amber-700 dark:text-amber-400 border-t border-border pt-1.5">
-                    <span>Total débité sur la carte</span>
+                    <span>{t('reservations.cardTotalCharged')}</span>
                     <span className="tabular-nums">{fmtMGA(cardTotalPreview)} MGA</span>
                   </div>
                 </>
               )}
 
-              {/* Autres */}
               {method !== "cash" && method !== "card" && (
                 <>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Reste dû</span>
+                    <span className="text-muted-foreground">{t('reservations.remainingDue')}</span>
                     <span className="font-semibold tabular-nums">{fmtMGA(balance)} MGA</span>
                   </div>
                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-                    <span>Montant encaissé</span>
+                    <span>{t('reservations.collectedAmount')}</span>
                     <span className="font-semibold tabular-nums">- {fmtMGA(otherAmt)} MGA</span>
                   </div>
                 </>
               )}
 
-              {/* Solde restant — commun */}
               <div className={`flex justify-between font-semibold border-t border-border pt-1.5 ${
                 remainingAfter > 0
                   ? "text-amber-600 dark:text-amber-400"
                   : "text-emerald-600 dark:text-emerald-400"
               }`}>
-                <span>Solde restant après paiement</span>
+                <span>{t('reservations.remainingBalanceAfterPayment')}</span>
                 <span className="tabular-nums">{fmtMGA(remainingAfter)} MGA</span>
               </div>
             </div>
           )}
 
-          {/* Infos frais carte */}
           {method === "card" && recNum > 0 && !isCardOver && (
-            <CardFeeBanner amount={cardAmt} />
+            <CardFeeBanner amount={cardAmt} t={t} />
           )}
 
-          {/* Erreurs */}
           {isCashInsufficient && (
             <p className="text-xs text-red-500">
-              La somme reçue ({fmtMGA(recNum)} MGA) est insuffisante pour couvrir le reste dû ({fmtMGA(balance)} MGA).
+              {t('reservations.insufficientAmount', { received: fmtMGA(recNum), balance: fmtMGA(balance) })}
             </p>
           )}
           {isCardOver && (
             <p className="text-xs text-red-500">
-              Le montant ({fmtMGA(cardAmt)} MGA) dépasse le solde dû ({fmtMGA(balance)} MGA).
+              {t('reservations.amountExceedsBalance', { amount: fmtMGA(cardAmt), balance: fmtMGA(balance) })}
             </p>
           )}
 
@@ -774,8 +731,8 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
             disabled={!canPay}
           >
             {pay.isPending
-              ? "Enregistrement…"
-              : `Encaisser ${amountToPost > 0 ? fmtMGA(amountToPost) + " MGA" : ""}`}
+              ? t('common.loading')
+              : `${t('reservations.collect')} ${amountToPost > 0 ? fmtMGA(amountToPost) + " MGA" : ""}`}
           </Button>
         </div>
       )}
@@ -788,6 +745,7 @@ function FolioPanel({ reservation, onUpdate }: { reservation: Reservation; onUpd
 // ══════════════════════════════════════════════════════════════════════════════
 
 const Reservations = () => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
 
   const { data: reservations = [], isLoading, refetch } = useQuery<Reservation[]>({
@@ -802,7 +760,6 @@ const Reservations = () => {
     staleTime: 30_000,
   });
 
-  // ── UI state ───────────────────────────────────────────────────────────────
   const [searchTerm,    setSearchTerm]    = useState("");
   const [filterStatus,  setFilterStatus]  = useState<ReservationStatus | "all">("all");
   const [showNew,       setShowNew]       = useState(false);
@@ -812,7 +769,6 @@ const Reservations = () => {
   const [exportOpen,    setExportOpen]    = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
 
-  // ── Formulaire ─────────────────────────────────────────────────────────────
   const EMPTY_FORM = {
     guestName: "", email: "", phone: "",
     roomType: "", roomId: "",
@@ -833,7 +789,6 @@ const Reservations = () => {
     ? (reservations.find(r => r.id === detailsId) ?? null)
     : null;
 
-  // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
@@ -852,7 +807,6 @@ const Reservations = () => {
     };
   }, [reservations]);
 
-  // ── Filtrage ───────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const term = searchTerm.toLowerCase();
     return reservations.filter(r => {
@@ -866,8 +820,6 @@ const Reservations = () => {
       return matchStatus && matchSearch;
     });
   }, [reservations, filterStatus, searchTerm]);
-
-  // ── Mutations ──────────────────────────────────────────────────────────────
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -889,14 +841,14 @@ const Reservations = () => {
       queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
       queryClient.invalidateQueries({ queryKey: ["hotel", "rooms"] });
       toast({
-        title: "Réservation créée",
-        description: `Chambre #${availableRooms.find(rm => rm.id === parseInt(form.roomId))?.number}`,
+        title: t('reservations.reservationCreated'),
+        description: `${t('hotel.room')} #${availableRooms.find(rm => rm.id === parseInt(form.roomId))?.number}`,
       });
       setForm(EMPTY_FORM);
       setShowNew(false);
     },
     onError: (e: any) =>
-      toast({ title: "Erreur création", description: String(e), variant: "destructive" }),
+      toast({ title: t('common.error'), description: String(e), variant: "destructive" }),
   });
 
   const updateStatus = useMutation({
@@ -908,10 +860,10 @@ const Reservations = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
       queryClient.invalidateQueries({ queryKey: ["hotel", "rooms"] });
-      toast({ title: "Statut mis à jour" });
+      toast({ title: t('common.status') + " " + t('reservations.updated') });
     },
     onError: (e: any) =>
-      toast({ title: "Erreur", description: String(e), variant: "destructive" }),
+      toast({ title: t('common.error'), description: String(e), variant: "destructive" }),
   });
 
   const deleteMut = useMutation({
@@ -919,26 +871,25 @@ const Reservations = () => {
     onSuccess: () => {
       setDeleteTarget(null);
       queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
-      toast({ title: "Réservation supprimée" });
+      toast({ title: t('reservations.reservationDeleted') });
     },
     onError: (e: any) => {
       setDeleteTarget(null);
-      toast({ title: "Suppression impossible", description: String(e), variant: "destructive" });
+      toast({ title: t('reservations.deleteImpossible'), description: String(e), variant: "destructive" });
     },
   });
 
-  // ── Validation formulaire ──────────────────────────────────────────────────
   const today0 = new Date(); today0.setHours(0, 0, 0, 0);
 
   const validateForm = (): string | null => {
-    if (!form.guestName.trim()) return "Le nom du client est requis.";
-    if (!form.roomId) return "Veuillez sélectionner une chambre.";
-    if (!form.checkIn) return "La date d'arrivée est requise.";
-    if (!form.checkOut) return "La date de départ est requise.";
-    if (!form.rate || parseInt(form.rate) <= 0) return "Le tarif doit être supérieur à 0.";
+    if (!form.guestName.trim()) return t('reservations.guestNameRequired');
+    if (!form.roomId) return t('reservations.roomRequired');
+    if (!form.checkIn) return t('reservations.checkInRequired');
+    if (!form.checkOut) return t('reservations.checkOutRequired');
+    if (!form.rate || parseInt(form.rate) <= 0) return t('reservations.ratePositive');
     const ci = new Date(form.checkIn), co = new Date(form.checkOut);
-    if (ci < today0) return "La date d'arrivée ne peut pas être dans le passé.";
-    if (co <= ci) return "La date de départ doit être après la date d'arrivée.";
+    if (ci < today0) return t('reservations.checkInPast');
+    if (co <= ci) return t('reservations.checkOutAfterCheckIn');
     return null;
   };
 
@@ -946,7 +897,6 @@ const Reservations = () => {
     ["checked_out", "cancelled", "no_show"].includes(r.status) ||
     new Date(r.checkOut) < new Date();
 
-  // ── Preview total formulaire ───────────────────────────────────────────────
   const formPreview = useMemo(() => {
     const rate = parseInt(form.rate);
     if (!rate || rate <= 0 || !form.checkIn || !form.checkOut) return null;
@@ -956,10 +906,9 @@ const Reservations = () => {
     return { n, rate, total: rate * n };
   }, [form.rate, form.checkIn, form.checkOut]);
 
-  // ── Export ─────────────────────────────────────────────────────────────────
   const doExport = async (fmt_: string) => {
     if (!filtered.length) {
-      toast({ title: "Aucune donnée à exporter", variant: "destructive" });
+      toast({ title: t('export.noDataToExport'), variant: "destructive" });
       return;
     }
     setExportLoading(true);
@@ -969,55 +918,62 @@ const Reservations = () => {
       const rows = filtered.map(r => {
         const n     = countNights(r.checkIn, r.checkOut);
         const total = r.folio?.total ?? r.rate * n;
-        const unit  = r.rateMode === "per_stay" ? "séjour(s)" : "nuit(s)";
+        const unit  = r.rateMode === "per_stay" ? t('reservations.perStayLower') : t('reservations.perNightLower');
+        const statusLabels: Record<ReservationStatus, string> = {
+          booked: t('reservations.statusBooked'),
+          checked_in: t('reservations.statusCheckedIn'),
+          checked_out: t('reservations.statusCheckedOut'),
+          cancelled: t('reservations.statusCancelled'),
+          no_show: t('reservations.statusNoShow'),
+        };
         return {
           ID: r.id,
-          Client: r.guest.fullName,
-          Email: r.guest.email ?? "",
-          Téléphone: r.guest.phone ?? "",
-          Chambre: r.room.number,
-          Type: r.room.type,
-          Arrivée: fmtDate(r.checkIn),
-          Départ: fmtDate(r.checkOut),
-          [r.rateMode === "per_stay" ? "Séjour(s)" : "Nuit(s)"]: n,
-          Statut: STATUS_META[r.status].label,
-          "Tarif MGA": r.rate,
-          "Mode tarif": r.rateMode === "per_stay" ? "Par séjour" : "Par nuit",
-          "Unité": unit,
-          "Total MGA": total,
-          "Solde MGA": r.folio?.balance ?? total,
-          Créée: fmtDate(r.createdAt),
-          Notes: r.guest.notes ?? "",
-          Paiements: (r.folio?.payments ?? [])
+          [t('crm.customers')]: r.guest.fullName,
+          [t('common.email')]: r.guest.email ?? "",
+          [t('common.phone')]: r.guest.phone ?? "",
+          [t('hotel.room')]: r.room.number,
+          [t('hotel.type')]: r.room.type,
+          [t('hotel.arrivalDate')]: fmtDate(r.checkIn),
+          [t('hotel.departureDate')]: fmtDate(r.checkOut),
+          [r.rateMode === "per_stay" ? t('reservations.stays') : t('reservations.nights')]: n,
+          [t('common.status')]: statusLabels[r.status],
+          [`${t('reservations.rateLabel')} MGA`]: r.rate,
+          [t('reservations.rateModeLabel')]: r.rateMode === "per_stay" ? t('reservations.perStay') : t('reservations.perNight'),
+          [t('reservations.unit')]: unit,
+          [`${t('reservations.total')} MGA`]: total,
+          [`${t('reservations.balance')} MGA`]: r.folio?.balance ?? total,
+          [t('common.createdAt')]: fmtDate(r.createdAt),
+          [t('common.notes')]: r.guest.notes ?? "",
+          [t('reservations.payments')]: (r.folio?.payments ?? [])
             .map(p => {
               const base = `${PAYMENT_LABELS[p.method as PaymentMethod] ?? p.method}: ${fmtMGA(p.amount)} MGA`;
               if (p.method === "card") {
                 const fee = getCardFee(p.amount);
-                return `${base} (+ frais banque ${fmtMGA(fee)} MGA = total carte ${fmtMGA(getCardTotal(p.amount))} MGA)`;
+                return `${base} (+ ${t('reservations.bankFee')} ${fmtMGA(fee)} MGA = ${t('reservations.cardTotal')} ${fmtMGA(getCardTotal(p.amount))} MGA)`;
               }
               return base;
             })
-            .join(" | ") || "Aucun",
+            .join(" | ") || t('reservations.none'),
         };
       });
 
       if (fmt_ === "excel") {
         const wb = XLSX.utils.book_new();
         const synth = [
-          ["RAPPORT DES RÉSERVATIONS", ""],
-          ["Exporté le", new Date().toLocaleString("fr-FR")],
-          ["Total (filtré)", filtered.length], ["", ""],
-          ["Confirmées", stats.booked],
-          ["En séjour", stats.checked_in],
-          ["Arrivées auj.", stats.arrivalsToday],
-          ["Départs auj.", stats.departuresToday],
+          [t('reservations.reservationsReport'), ""],
+          [t('export.title'), new Date().toLocaleString("fr-FR")],
+          [t('reservations.totalFiltered'), filtered.length], ["", ""],
+          [t('reservations.statusBooked'), stats.booked],
+          [t('reservations.statusCheckedIn'), stats.checked_in],
+          [t('reservations.arrivalsToday'), stats.arrivalsToday],
+          [t('reservations.departuresToday'), stats.departuresToday],
         ];
         const ws1 = XLSX.utils.aoa_to_sheet(synth);
         ws1["!cols"] = [{ wch: 22 }, { wch: 20 }];
-        XLSX.utils.book_append_sheet(wb, ws1, "Synthèse");
+        XLSX.utils.book_append_sheet(wb, ws1, t('reservations.summary'));
         const ws2 = XLSX.utils.json_to_sheet(rows);
         ws2["!cols"] = [6, 20, 25, 15, 10, 12, 14, 14, 6, 12, 12, 12, 10, 12, 12, 14, 30, 60].map(w => ({ wch: w }));
-        XLSX.utils.book_append_sheet(wb, ws2, "Réservations");
+        XLSX.utils.book_append_sheet(wb, ws2, t('reservations.title'));
         saveAs(
           new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })],
             { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
@@ -1037,15 +993,13 @@ const Reservations = () => {
         const txt = rows.map(r => Object.entries(r).map(([k, v]) => `${k}: ${v}`).join("\n")).join("\n\n─────────────\n\n");
         saveAs(new Blob([txt], { type: "text/plain;charset=utf-8" }), `reservations-${dateStr}.txt`);
       }
-      toast({ title: "Export réussi", description: `${filtered.length} réservation(s) exportée(s)` });
+      toast({ title: t('export.exportSuccess'), description: `${filtered.length} ${t('reservations.reservationsExported')}` });
     } catch (e) {
-      toast({ title: "Erreur export", description: String(e), variant: "destructive" });
+      toast({ title: t('export.exportError'), description: String(e), variant: "destructive" });
     } finally {
       setExportLoading(false);
     }
   };
-
-  // ── Rendu ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
@@ -1055,35 +1009,33 @@ const Reservations = () => {
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
 
-          {/* Titre + actions */}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5">Hôtel · Planning</p>
-              <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Réservations</h1>
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5">{t('hotel.planning')}</p>
+              <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">{t('reservations.title')}</h1>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => refetch()}>
                 <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
               </Button>
 
-              {/* Export */}
               <div className="relative">
                 <Button variant="outline" size="sm" className="gap-2"
                   onClick={() => setExportOpen(o => !o)} disabled={exportLoading}>
                   <Download className="h-4 w-4" />
-                  Exporter
+                  {t('common.export')}
                   <ChevronDown className={`h-3.5 w-3.5 transition-transform ${exportOpen ? "rotate-180" : ""}`} />
                 </Button>
                 {exportOpen && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setExportOpen(false)} />
                     <div className="absolute right-0 top-full mt-1 w-52 bg-popover border border-border rounded-lg shadow-lg z-50 overflow-hidden">
-                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground px-3 pt-2.5 pb-1.5">Format</p>
+                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground px-3 pt-2.5 pb-1.5">{t('export.formats')}</p>
                       {[
-                        { f: "excel", label: "Excel",  ext: ".xlsx", Icon: FileSpreadsheet, c: "text-emerald-600" },
-                        { f: "csv",   label: "CSV",    ext: ".csv",  Icon: TableIcon,       c: "text-blue-600"    },
-                        { f: "json",  label: "JSON",   ext: ".json", Icon: FileCode,        c: "text-orange-600"  },
-                        { f: "txt",   label: "Texte",  ext: ".txt",  Icon: FileText,        c: "text-violet-600"  },
+                        { f: "excel", label: t('export.excel'),  ext: ".xlsx", Icon: FileSpreadsheet, c: "text-emerald-600" },
+                        { f: "csv",   label: t('export.csv'),    ext: ".csv",  Icon: TableIcon,       c: "text-blue-600"    },
+                        { f: "json",  label: t('export.json'),   ext: ".json", Icon: FileCode,        c: "text-orange-600"  },
+                        { f: "txt",   label: t('export.txt'),   ext: ".txt",  Icon: FileText,        c: "text-violet-600"  },
                       ].map(({ f, label, ext, Icon, c }) => (
                         <button key={f}
                           className="flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-muted transition-colors"
@@ -1094,7 +1046,7 @@ const Reservations = () => {
                         </button>
                       ))}
                       <div className="border-t border-border px-3 py-2">
-                        <p className="text-[10px] text-muted-foreground">{filtered.length} résultat(s) filtré(s)</p>
+                        <p className="text-[10px] text-muted-foreground">{filtered.length} {t('reservations.resultsFiltered')}</p>
                       </div>
                     </div>
                   </>
@@ -1102,19 +1054,18 @@ const Reservations = () => {
               </div>
 
               <Button size="sm" className="gap-2" onClick={() => setShowNew(true)}>
-                <Plus className="h-4 w-4" /> Nouvelle réservation
+                <Plus className="h-4 w-4" /> {t('reservations.newReservation')}
               </Button>
             </div>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {[
-              { label: "Total",         value: stats.total,           color: "text-foreground"    },
-              { label: "Confirmées",    value: stats.booked,          color: "text-violet-500"    },
-              { label: "En séjour",     value: stats.checked_in,      color: "text-blue-500"      },
-              { label: "Arrivées auj.", value: stats.arrivalsToday,   color: "text-emerald-500"   },
-              { label: "Départs auj.",  value: stats.departuresToday, color: "text-amber-500"     },
+              { label: t('reservations.total'),         value: stats.total,           color: "text-foreground"    },
+              { label: t('reservations.statusBooked'),    value: stats.booked,          color: "text-violet-500"    },
+              { label: t('reservations.statusCheckedIn'),     value: stats.checked_in,      color: "text-blue-500"      },
+              { label: t('reservations.arrivalsToday'), value: stats.arrivalsToday,   color: "text-emerald-500"   },
+              { label: t('reservations.departuresToday'),  value: stats.departuresToday, color: "text-amber-500"     },
             ].map(s => (
               <Card key={s.label}>
                 <div className="px-4 py-3">
@@ -1125,12 +1076,11 @@ const Reservations = () => {
             ))}
           </div>
 
-          {/* Filtres */}
           <div className="flex flex-wrap gap-3 items-center">
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Nom, chambre, ID, email…"
+                placeholder={t('reservations.searchPlaceholder')}
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 className="pl-9"
@@ -1139,24 +1089,30 @@ const Reservations = () => {
             <Select value={filterStatus} onValueChange={v => setFilterStatus(v as any)}>
               <SelectTrigger className="w-44">
                 <Filter className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Tous les statuts" />
+                <SelectValue placeholder={t('reservations.allStatuses')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tous les statuts</SelectItem>
-                {(Object.entries(STATUS_META) as [ReservationStatus, any][]).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                ))}
+                <SelectItem value="all">{t('reservations.allStatuses')}</SelectItem>
+                {(Object.entries(STATUS_META) as [ReservationStatus, any][]).map(([k]) => {
+                  const statusLabels: Record<ReservationStatus, string> = {
+                    booked: t('reservations.statusBooked'),
+                    checked_in: t('reservations.statusCheckedIn'),
+                    checked_out: t('reservations.statusCheckedOut'),
+                    cancelled: t('reservations.statusCancelled'),
+                    no_show: t('reservations.statusNoShow'),
+                  };
+                  return <SelectItem key={k} value={k}>{statusLabels[k]}</SelectItem>;
+                })}
               </SelectContent>
             </Select>
             {(searchTerm || filterStatus !== "all") && (
               <Button variant="ghost" size="sm" onClick={() => { setSearchTerm(""); setFilterStatus("all"); }}>
-                Réinitialiser
+                {t('common.reset')}
               </Button>
             )}
-            <span className="text-xs text-muted-foreground ml-auto">{filtered.length} résultat(s)</span>
+            <span className="text-xs text-muted-foreground ml-auto">{filtered.length} {t('reservations.results')}</span>
           </div>
 
-          {/* Liste */}
           {isLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-32 w-full rounded-xl" />)}
@@ -1165,9 +1121,9 @@ const Reservations = () => {
             <Card>
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
                 <CalendarDays className="h-10 w-10 opacity-20" />
-                <p>Aucune réservation trouvée</p>
+                <p>{t('reservations.noReservationsFound')}</p>
                 <Button variant="outline" size="sm" className="gap-2 mt-1" onClick={() => setShowNew(true)}>
-                  <Plus className="h-4 w-4" /> Créer une réservation
+                  <Plus className="h-4 w-4" /> {t('reservations.createReservation')}
                 </Button>
               </div>
             </Card>
@@ -1176,11 +1132,17 @@ const Reservations = () => {
               {filtered.map(r => {
                 const n            = countNights(r.checkIn, r.checkOut);
                 const displayBalance = r.folio?.balance ?? r.rate * n;
+                const statusLabels: Record<ReservationStatus, string> = {
+                  booked: t('reservations.statusBooked'),
+                  checked_in: t('reservations.statusCheckedIn'),
+                  checked_out: t('reservations.statusCheckedOut'),
+                  cancelled: t('reservations.statusCancelled'),
+                  no_show: t('reservations.statusNoShow'),
+                };
 
                 return (
                   <Card key={r.id} className="hover:shadow-md transition-shadow">
                     <div className="p-4 sm:p-5">
-                      {/* Guest + statut */}
                       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -1188,18 +1150,17 @@ const Reservations = () => {
                           </div>
                           <div>
                             <p className="font-semibold leading-none">{r.guest.fullName}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">Réservation #{r.id}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{t('reservations.reservation')} #{r.id}</p>
                           </div>
                         </div>
-                        <StatusBadge status={r.status} />
+                        <StatusBadge status={r.status} t={t} />
                       </div>
 
-                      {/* Info grid */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 text-sm">
                         <div className="flex items-start gap-2">
                           <MapPin className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
                           <div>
-                            <p className="font-medium">Ch. {r.room.number}</p>
+                            <p className="font-medium">{t('hotel.room')}. {r.room.number}</p>
                             <p className="text-xs text-muted-foreground">{r.room.type}</p>
                           </div>
                         </div>
@@ -1208,29 +1169,28 @@ const Reservations = () => {
                           <div>
                             <p className="font-medium">{fmtShort(r.checkIn)} → {fmtDate(r.checkOut)}</p>
                             <p className="text-xs text-muted-foreground">
-                              {n} {unitLabel(r.rateMode)}
+                              {n} {unitLabel(r.rateMode, t)}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-start gap-2">
                           <CreditCard className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
                           <div>
-                            <p className="font-medium">{fmtRateLabel(r.rate, r.rateMode)}</p>
+                            <p className="font-medium">{fmtRateLabel(r.rate, r.rateMode, t)}</p>
                             <p className={`text-xs ${displayBalance > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                              Solde : {fmtMGA(displayBalance)} MGA
+                              {t('reservations.balance')} : {fmtMGA(displayBalance)} MGA
                             </p>
                           </div>
                         </div>
                         <div className="flex items-start gap-2">
                           <Clock className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
                           <div>
-                            <p className="font-medium">Créée le</p>
+                            <p className="font-medium">{t('common.createdAt')}</p>
                             <p className="text-xs text-muted-foreground">{fmtDate(r.createdAt)}</p>
                           </div>
                         </div>
                       </div>
 
-                      {/* Contact */}
                       {(r.guest.email || r.guest.phone) && (
                         <div className="flex flex-wrap gap-3 mb-3 text-xs text-muted-foreground">
                           {r.guest.email && <span className="flex items-center gap-1"><Mail className="h-3 w-3" />{r.guest.email}</span>}
@@ -1245,42 +1205,41 @@ const Reservations = () => {
 
                       <Separator className="my-3" />
 
-                      {/* Actions */}
                       <div className="flex flex-wrap items-center gap-2 justify-end">
                         {r.status === "booked" && (
                           <Button size="sm" variant="outline" className="gap-1.5"
                             onClick={() => updateStatus.mutate({ id: r.id, status: "checked_in" })}>
-                            <LogIn className="h-3.5 w-3.5" /> Check-in
+                            <LogIn className="h-3.5 w-3.5" /> {t('reservations.checkIn')}
                           </Button>
                         )}
                         {r.status === "checked_in" && (
                           <Button size="sm" variant="outline" className="gap-1.5"
                             onClick={() => updateStatus.mutate({ id: r.id, status: "checked_out" })}>
-                            <LogOut className="h-3.5 w-3.5" /> Check-out
+                            <LogOut className="h-3.5 w-3.5" /> {t('reservations.checkOut')}
                           </Button>
                         )}
                         {r.status === "booked" && (
                           <Button size="sm" variant="outline"
                             className="gap-1.5 text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20"
                             onClick={() => updateStatus.mutate({ id: r.id, status: "no_show" })}>
-                            No-show
+                            {t('reservations.noShow')}
                           </Button>
                         )}
                         {r.status === "booked" && (
                           <Button size="sm" variant="outline"
                             className="gap-1.5 text-red-600 border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20"
                             onClick={() => setCancelTarget(r)}>
-                            <XCircle className="h-3.5 w-3.5" /> Annuler
+                            <XCircle className="h-3.5 w-3.5" /> {t('reservations.cancel')}
                           </Button>
                         )}
-                        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => printA4(r)}>
+                        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => printA4(r, t)}>
                           <FileText className="h-3.5 w-3.5" /> A4
                         </Button>
-                        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => print80mm(r)}>
+                        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => print80mm(r, t)}>
                           <Printer className="h-3.5 w-3.5" /> 80 mm
                         </Button>
                         <Button size="sm" variant="secondary" onClick={() => setDetailsId(r.id)}>
-                          Détails & paiement
+                          {t('reservations.detailsAndPayment')}
                         </Button>
                         {canDelete(r) && (
                           <Button size="sm" variant="ghost"
@@ -1299,74 +1258,71 @@ const Reservations = () => {
         </main>
       </div>
 
-      {/* ══ DIALOG — Nouvelle réservation ══════════════════════════════════════ */}
+      {/* DIALOG — Nouvelle réservation */}
       <Dialog open={showNew} onOpenChange={o => { if (!o) setForm(EMPTY_FORM); setShowNew(o); }}>
         <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nouvelle réservation</DialogTitle>
-            <DialogDescription>Les champs marqués * sont obligatoires.</DialogDescription>
+            <DialogTitle>{t('reservations.newReservation')}</DialogTitle>
+            <DialogDescription>{t('reservations.requiredFields')}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* Client */}
             <div className="space-y-1.5">
-              <Label>Nom du client <span className="text-destructive">*</span></Label>
-              <Input placeholder="Prénom Nom" value={form.guestName} onChange={e => setF("guestName", e.target.value)} />
+              <Label>{t('crm.fullName')} <span className="text-destructive">*</span></Label>
+              <Input placeholder={t('crm.fullName')} value={form.guestName} onChange={e => setF("guestName", e.target.value)} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Email</Label>
+                <Label>{t('common.email')}</Label>
                 <Input type="email" placeholder="client@email.com" value={form.email} onChange={e => setF("email", e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>Téléphone</Label>
+                <Label>{t('common.phone')}</Label>
                 <Input placeholder="+261 34 00 000 00" value={form.phone} onChange={e => setF("phone", e.target.value)} />
               </div>
             </div>
 
             <Separator />
 
-            {/* Dates */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Arrivée <span className="text-destructive">*</span></Label>
+                <Label>{t('hotel.arrivalDate')} <span className="text-destructive">*</span></Label>
                 <Input type="date" min={new Date().toISOString().slice(0, 10)}
                   value={form.checkIn} onChange={e => setF("checkIn", e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>Départ <span className="text-destructive">*</span></Label>
+                <Label>{t('hotel.departureDate')} <span className="text-destructive">*</span></Label>
                 <Input type="date" min={form.checkIn || new Date().toISOString().slice(0, 10)}
                   value={form.checkOut} onChange={e => setF("checkOut", e.target.value)} />
               </div>
             </div>
             {form.checkIn && form.checkOut && new Date(form.checkOut) > new Date(form.checkIn) && (
               <p className="text-xs text-muted-foreground -mt-2">
-                Séjour de {countNights(form.checkIn, form.checkOut)} {unitLabel(form.rateMode as RateMode)}
+                {t('reservations.stayOf')} {countNights(form.checkIn, form.checkOut)} {unitLabel(form.rateMode as RateMode, t)}
               </p>
             )}
 
-            {/* Chambre */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Type de chambre</Label>
+                <Label>{t('hotel.roomType')}</Label>
                 <Select value={form.roomType} onValueChange={v => {
                   setF("roomType", v === "all" ? "" : v);
                   setF("roomId", "");
                 }}>
-                  <SelectTrigger><SelectValue placeholder="Tous types" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('common.all')} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tous types</SelectItem>
+                    <SelectItem value="all">{t('common.all')}</SelectItem>
                     {ROOM_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Chambre <span className="text-destructive">*</span></Label>
+                <Label>{t('hotel.room')} <span className="text-destructive">*</span></Label>
                 <Select value={form.roomId} onValueChange={v => setF("roomId", v)}>
-                  <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('hotel.selectRoom')} /></SelectTrigger>
                   <SelectContent>
                     {availableRooms.length === 0
-                      ? <div className="px-3 py-4 text-sm text-muted-foreground text-center">Aucune chambre disponible</div>
+                      ? <div className="px-3 py-4 text-sm text-muted-foreground text-center">{t('hotel.noRoomsAvailable')}</div>
                       : availableRooms.map(rm => (
                         <SelectItem key={rm.id} value={String(rm.id)}>#{rm.number} — {rm.type}</SelectItem>
                       ))
@@ -1376,9 +1332,8 @@ const Reservations = () => {
               </div>
             </div>
 
-            {/* Tarification */}
             <div className="space-y-1.5">
-              <Label>Tarification <span className="text-destructive">*</span></Label>
+              <Label>{t('reservations.pricing')} <span className="text-destructive">*</span></Label>
               <div className="flex rounded-md border border-input overflow-hidden text-sm">
                 {(["per_night", "per_stay"] as RateMode[]).map(mode => (
                   <button key={mode} type="button"
@@ -1387,14 +1342,14 @@ const Reservations = () => {
                       : "bg-transparent text-muted-foreground hover:bg-muted"
                     }`}
                     onClick={() => setF("rateMode", mode)}>
-                    {mode === "per_night" ? "Par nuit" : "Par séjour"}
+                    {mode === "per_night" ? t('reservations.perNight') : t('reservations.perStay')}
                   </button>
                 ))}
               </div>
               <div className="relative">
                 <Input
                   type="number" min={0}
-                  placeholder={form.rateMode === "per_night" ? "ex: 150 000 MGA/nuit" : "ex: 450 000 MGA/séjour"}
+                  placeholder={form.rateMode === "per_night" ? t('reservations.perNightExample') : t('reservations.perStayExample')}
                   value={form.rate}
                   onChange={e => setF("rate", e.target.value)}
                   className="pr-14"
@@ -1405,73 +1360,70 @@ const Reservations = () => {
                 <p className="text-xs text-muted-foreground bg-muted/40 rounded px-2 py-1">
                   {form.rateMode === "per_night" ? (
                     <>
-                      <span className="font-medium">{fmtMGA(formPreview.rate)} MGA/nuit</span>
-                      {" × "}{formPreview.n} nuit{formPreview.n > 1 ? "s" : ""}
+                      <span className="font-medium">{fmtMGA(formPreview.rate)} MGA/{t('reservations.perNightLower')}</span>
+                      {" × "}{formPreview.n} {formPreview.n > 1 ? t('reservations.nights') : t('reservations.night')}
                       {" = "}
                       <span className="font-semibold text-foreground">{fmtMGA(formPreview.total)} MGA</span>
                     </>
                   ) : (
                     <>
-                      <span className="font-medium">{fmtMGA(formPreview.rate)} MGA/séjour</span>
-                      {" · "}{formPreview.n} séjour{formPreview.n > 1 ? "s" : ""}
-                      {" → total "}
-                      <span className="font-semibold text-foreground">{fmtMGA(formPreview.total)} MGA</span>
+                      <span className="font-medium">{fmtMGA(formPreview.rate)} MGA/{t('reservations.perStayLower')}</span>
+                      {" · "}{formPreview.n} {formPreview.n > 1 ? t('reservations.stays') : t('reservations.stay')}
+                      {" → "}{t('reservations.total').toLowerCase()} <span className="font-semibold text-foreground">{fmtMGA(formPreview.total)} MGA</span>
                     </>
                   )}
                 </p>
               )}
             </div>
 
-            {/* Notes */}
             <div className="space-y-1.5">
-              <Label>Notes <span className="text-xs text-muted-foreground">(optionnel)</span></Label>
-              <Textarea rows={2} placeholder="Demandes spéciales, lit bébé…"
+              <Label>{t('common.notes')} <span className="text-xs text-muted-foreground">({t('common.optional')})</span></Label>
+              <Textarea rows={2} placeholder={t('reservations.notesPlaceholder')}
                 value={form.notes} onChange={e => setF("notes", e.target.value)} />
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="ghost" onClick={() => { setForm(EMPTY_FORM); setShowNew(false); }}>Annuler</Button>
+            <Button variant="ghost" onClick={() => { setForm(EMPTY_FORM); setShowNew(false); }}>{t('common.cancel')}</Button>
             <Button
               onClick={() => {
                 const err = validateForm();
-                if (err) { toast({ title: "Formulaire invalide", description: err, variant: "destructive" }); return; }
+                if (err) { toast({ title: t('reservations.invalidForm'), description: err, variant: "destructive" }); return; }
                 createMut.mutate();
               }}
               disabled={createMut.isPending}>
-              {createMut.isPending ? "Création…" : "Créer la réservation"}
+              {createMut.isPending ? t('common.loading') : t('reservations.createReservation')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ══ DIALOG — Détails & paiement ════════════════════════════════════════ */}
+      {/* DIALOG — Détails & paiement */}
       <Dialog open={detailsId !== null} onOpenChange={o => !o && setDetailsId(null)}>
         <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto">
           {detailsRes && (
             <>
               <DialogHeader>
-                <DialogTitle>Réservation #{detailsRes.id}</DialogTitle>
+                <DialogTitle>{t('reservations.reservation')} #{detailsRes.id}</DialogTitle>
                 <DialogDescription className="flex items-center gap-2 flex-wrap">
-                  {detailsRes.guest.fullName} · Ch. #{detailsRes.room.number}
-                  &nbsp;<StatusBadge status={detailsRes.status} />
+                  {detailsRes.guest.fullName} · {t('hotel.room')}. #{detailsRes.room.number}
+                  &nbsp;<StatusBadge status={detailsRes.status} t={t} />
                 </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-5 py-2">
-                {/* Séjour */}
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="rounded-lg border border-border bg-muted/30 p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Chambre</p>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t('hotel.room')}</p>
                     <p className="font-semibold">#{detailsRes.room.number} — {detailsRes.room.type}</p>
                   </div>
                   <div className="rounded-lg border border-border bg-muted/30 p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Séjour</p>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t('reservations.stay')}</p>
                     <p className="font-semibold">{fmtShort(detailsRes.checkIn)} → {fmtDate(detailsRes.checkOut)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {countNights(detailsRes.checkIn, detailsRes.checkOut)} {unitLabel(detailsRes.rateMode)}
+                      {countNights(detailsRes.checkIn, detailsRes.checkOut)} {unitLabel(detailsRes.rateMode, t)}
                       {" · "}
-                      {fmtRateLabel(detailsRes.rate, detailsRes.rateMode)}
+                      {fmtRateLabel(detailsRes.rate, detailsRes.rateMode, t)}
                     </p>
                   </div>
                 </div>
@@ -1490,51 +1442,49 @@ const Reservations = () => {
 
                 <Separator />
 
-                {/* Factures */}
                 <div>
                   <p className="text-sm font-semibold mb-2 flex items-center gap-2">
-                    <Printer className="h-4 w-4 text-muted-foreground" /> Imprimer la facture
+                    <Printer className="h-4 w-4 text-muted-foreground" /> {t('reservations.printInvoice')}
                   </p>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="gap-2 flex-1" onClick={() => printA4(detailsRes)}>
-                      <FileText className="h-4 w-4 text-blue-600" /> Format A4
+                    <Button size="sm" variant="outline" className="gap-2 flex-1" onClick={() => printA4(detailsRes, t)}>
+                      <FileText className="h-4 w-4 text-blue-600" /> {t('dailyInvoice.printA4')}
                     </Button>
-                    <Button size="sm" variant="outline" className="gap-2 flex-1" onClick={() => print80mm(detailsRes)}>
-                      <Printer className="h-4 w-4 text-violet-600" /> Thermique 80 mm
+                    <Button size="sm" variant="outline" className="gap-2 flex-1" onClick={() => print80mm(detailsRes, t)}>
+                      <Printer className="h-4 w-4 text-violet-600" /> {t('dailyInvoice.print80mm')}
                     </Button>
                   </div>
                 </div>
 
                 <Separator />
 
-                {/* Folio */}
                 <div>
                   <p className="text-sm font-semibold mb-3 flex items-center gap-2">
-                    <Banknote className="h-4 w-4 text-muted-foreground" /> Folio & Encaissement
+                    <Banknote className="h-4 w-4 text-muted-foreground" /> {t('reservations.folioAndCollection')}
                   </p>
                   <FolioPanel
                     reservation={detailsRes}
                     onUpdate={() => queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] })}
+                    t={t}
                   />
                 </div>
 
                 <Separator />
 
-                {/* Actions statut */}
                 <div className="flex flex-wrap gap-2 justify-end">
                   {detailsRes.status === "booked" && (
                     <Button size="sm" variant="outline" className="gap-1.5"
                       onClick={() => updateStatus.mutate({ id: detailsRes.id, status: "checked_in" })}>
-                      <LogIn className="h-3.5 w-3.5" /> Check-in
+                      <LogIn className="h-3.5 w-3.5" /> {t('reservations.checkIn')}
                     </Button>
                   )}
                   {detailsRes.status === "checked_in" && (
                     <Button size="sm" variant="outline" className="gap-1.5"
                       onClick={() => updateStatus.mutate({ id: detailsRes.id, status: "checked_out" })}>
-                      <LogOut className="h-3.5 w-3.5" /> Check-out
+                      <LogOut className="h-3.5 w-3.5" /> {t('reservations.checkOut')}
                     </Button>
                   )}
-                  <Button variant="ghost" size="sm" onClick={() => setDetailsId(null)}>Fermer</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setDetailsId(null)}>{t('common.close')}</Button>
                 </div>
               </div>
             </>
@@ -1546,18 +1496,18 @@ const Reservations = () => {
       <AlertDialog open={!!cancelTarget} onOpenChange={o => !o && setCancelTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Annuler la réservation #{cancelTarget?.id} ?</AlertDialogTitle>
+            <AlertDialogTitle>{t('reservations.cancelReservation')} #{cancelTarget?.id} ?</AlertDialogTitle>
             <AlertDialogDescription>
-              {cancelTarget?.guest.fullName} · Chambre #{cancelTarget?.room.number}<br />
-              La chambre sera automatiquement remise en statut « disponible ».
+              {cancelTarget?.guest.fullName} · {t('hotel.room')} #{cancelTarget?.room.number}<br />
+              {t('reservations.cancelDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Retour</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.back')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => { updateStatus.mutate({ id: cancelTarget!.id, status: "cancelled" }); setCancelTarget(null); }}>
-              Confirmer l'annulation
+              {t('reservations.confirmCancellation')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1567,17 +1517,17 @@ const Reservations = () => {
       <AlertDialog open={!!deleteTarget} onOpenChange={o => !o && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer la réservation #{deleteTarget?.id} ?</AlertDialogTitle>
+            <AlertDialogTitle>{t('reservations.deleteReservation')} #{deleteTarget?.id} ?</AlertDialogTitle>
             <AlertDialogDescription>
-              Cette action est irréversible. Le folio et les paiements associés seront également supprimés.
+              {t('reservations.deleteDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}>
-              Supprimer définitivement
+              {t('reservations.deletePermanently')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

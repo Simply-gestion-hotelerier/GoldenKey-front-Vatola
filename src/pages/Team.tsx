@@ -1,3 +1,4 @@
+// src/pages/team/Team.tsx
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -16,18 +17,16 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Plus, Users, Pencil, Trash2, X, Check, Key } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const ROLES = [
-  { value: "ADMIN",        label: "Admin",        color: "bg-red-100 text-red-800" },
-  { value: "MANAGER",      label: "Manager",      color: "bg-blue-100 text-blue-800" },
-  { value: "RECEPTION",    label: "Réception",    color: "bg-teal-100 text-teal-800" },
-  { value: "HOUSEKEEPING", label: "Housekeeping", color: "bg-green-100 text-green-800" },
-  { value: "WAITER",       label: "Serveur",      color: "bg-amber-100 text-amber-800" },
-  { value: "KITCHEN",      label: "Cuisine",      color: "bg-orange-100 text-orange-800" },
-  // { value: "BARTENDER",    label: "Bar",           color: "bg-purple-100 text-purple-800" },
-  { value: "CASHIER",      label: "Caisse",       color: "bg-pink-100 text-pink-800" },
-  // { value: "STAFF",        label: "Staff",        color: "bg-gray-100 text-gray-800" },
-  // { value: "GUEST",        label: "Client",       color: "bg-slate-100 text-slate-800" },
+  { value: "ADMIN",        label: "admin",        color: "bg-red-100 text-red-800" },
+  { value: "MANAGER",      label: "manager",      color: "bg-blue-100 text-blue-800" },
+  { value: "RECEPTION",    label: "reception",    color: "bg-teal-100 text-teal-800" },
+  { value: "HOUSEKEEPING", label: "housekeeping", color: "bg-green-100 text-green-800" },
+  { value: "WAITER",       label: "waiter",       color: "bg-amber-100 text-amber-800" },
+  { value: "KITCHEN",      label: "kitchen",      color: "bg-orange-100 text-orange-800" },
+  { value: "CASHIER",      label: "cashier",      color: "bg-pink-100 text-pink-800" },
 ];
 
 interface UserRow {
@@ -41,6 +40,7 @@ interface UserRow {
 const emptyForm = { email: "", password: "", name: "", role: "" };
 
 const Team: React.FC = () => {
+  const { t } = useTranslation();
   const qc = useQueryClient();
 
   // ── état UI ──────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ const Team: React.FC = () => {
       setForm({ ...emptyForm });
       setFormError("");
     },
-    onError: (err: any) => setFormError(err?.message || "Erreur création"),
+    onError: (err: any) => setFormError(err?.message || t('team.createError')),
   });
 
   const updateMutation = useMutation({
@@ -77,7 +77,7 @@ const Team: React.FC = () => {
       setEditId(null);
       setEditForm({});
     },
-    onError: (err: any) => setFormError(err?.message || "Erreur mise à jour"),
+    onError: (err: any) => setFormError(err?.message || t('team.updateError')),
   });
 
   const deleteMutation = useMutation({
@@ -92,7 +92,7 @@ const Team: React.FC = () => {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.email || !form.password || !form.role) {
-      setFormError("Email, mot de passe et rôle sont requis");
+      setFormError(t('team.requiredFields'));
       return;
     }
     createMutation.mutate(form);
@@ -115,8 +115,16 @@ const Team: React.FC = () => {
     updateMutation.mutate(payload);
   };
 
-  const roleInfo = (role: string) =>
-    ROLES.find(r => r.value === role) ?? { label: role, color: "bg-gray-100 text-gray-700" };
+  const getRoleLabel = (role: string) => {
+    const found = ROLES.find(r => r.value === role);
+    if (found) return t(`team.roles.${found.label}`);
+    return role;
+  };
+
+  const getRoleColor = (role: string) => {
+    const found = ROLES.find(r => r.value === role);
+    return found?.color ?? "bg-gray-100 text-gray-700";
+  };
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -130,15 +138,15 @@ const Team: React.FC = () => {
           <div className="flex justify-between items-center mb-6">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2">
-                <Users className="w-6 h-6" /> Équipe
+                <Users className="w-6 h-6" /> {t('team.title')}
               </h1>
               <p className="text-muted-foreground text-sm mt-1">
-                Gérez les comptes utilisateurs de l'application
+                {t('team.subtitle')}
               </p>
             </div>
             <Button onClick={() => { setShowCreate(true); setFormError(""); }}
               className="flex items-center gap-2">
-              <Plus className="w-4 h-4" /> Nouveau compte
+              <Plus className="w-4 h-4" /> {t('team.newAccount')}
             </Button>
           </div>
 
@@ -147,40 +155,42 @@ const Team: React.FC = () => {
             <Card className="mb-6 border-blue-200">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Key className="w-4 h-4" /> Créer un utilisateur
+                  <Key className="w-4 h-4" /> {t('team.createUser')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleCreate}
                   className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label>Email *</Label>
+                    <Label>{t('common.email')} *</Label>
                     <Input value={form.email}
                       onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
                       placeholder="jean@hotel.com" className="mt-1" />
                   </div>
                   <div>
-                    <Label>Mot de passe *</Label>
+                    <Label>{t('team.password')} *</Label>
                     <Input type="password" value={form.password}
                       onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                      placeholder="Min. 4 caractères" className="mt-1" />
+                      placeholder={t('team.passwordMinLength')} className="mt-1" />
                   </div>
                   <div>
-                    <Label>Nom complet</Label>
+                    <Label>{t('team.fullName')}</Label>
                     <Input value={form.name}
                       onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                      placeholder="Jean Dupont" className="mt-1" />
+                      placeholder={t('team.fullNamePlaceholder')} className="mt-1" />
                   </div>
                   <div>
-                    <Label>Rôle *</Label>
+                    <Label>{t('team.role')} *</Label>
                     <Select value={form.role}
                       onValueChange={v => setForm(p => ({ ...p, role: v }))}>
                       <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Sélectionner un rôle" />
+                        <SelectValue placeholder={t('team.selectRole')} />
                       </SelectTrigger>
                       <SelectContent>
                         {ROLES.map(r => (
-                          <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                          <SelectItem key={r.value} value={r.value}>
+                            {t(`team.roles.${r.label}`)}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -193,10 +203,10 @@ const Team: React.FC = () => {
                   <div className="md:col-span-2 flex gap-2 justify-end">
                     <Button type="button" variant="outline"
                       onClick={() => { setShowCreate(false); setFormError(""); }}>
-                      Annuler
+                      {t('common.cancel')}
                     </Button>
                     <Button type="submit" disabled={createMutation.isPending}>
-                      {createMutation.isPending ? "Création..." : "Créer"}
+                      {createMutation.isPending ? t('common.loading') : t('team.create')}
                     </Button>
                   </div>
                 </form>
@@ -206,17 +216,18 @@ const Team: React.FC = () => {
 
           {/* Liste */}
           {isLoading ? (
-            <div className="text-center py-12 text-muted-foreground">Chargement...</div>
+            <div className="text-center py-12 text-muted-foreground">{t('common.loading')}</div>
           ) : users.length === 0 ? (
             <div className="text-center py-12">
               <Users className="w-12 h-12 mx-auto text-muted-foreground/40 mb-4" />
-              <p className="text-muted-foreground">Aucun utilisateur</p>
+              <p className="text-muted-foreground">{t('team.noUsers')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {users.map(user => {
-                const ri = roleInfo(user.role);
                 const isEditing = editId === user.id;
+                const roleColor = getRoleColor(user.role);
+                const roleLabel = getRoleLabel(user.role);
 
                 return (
                   <Card key={user.id}
@@ -227,19 +238,19 @@ const Team: React.FC = () => {
                         /* ── Mode édition ── */
                         <form onSubmit={handleUpdate} className="space-y-3">
                           <div>
-                            <Label className="text-xs">Email</Label>
+                            <Label className="text-xs">{t('common.email')}</Label>
                             <Input value={editForm.email ?? ""}
                               onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))}
                               className="mt-1 h-8 text-sm" />
                           </div>
                           <div>
-                            <Label className="text-xs">Nom</Label>
+                            <Label className="text-xs">{t('team.fullName')}</Label>
                             <Input value={editForm.name ?? ""}
                               onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
                               className="mt-1 h-8 text-sm" />
                           </div>
                           <div>
-                            <Label className="text-xs">Rôle</Label>
+                            <Label className="text-xs">{t('team.role')}</Label>
                             <Select value={editForm.role ?? ""}
                               onValueChange={v => setEditForm(p => ({ ...p, role: v }))}>
                               <SelectTrigger className="mt-1 h-8 text-sm">
@@ -247,16 +258,18 @@ const Team: React.FC = () => {
                               </SelectTrigger>
                               <SelectContent>
                                 {ROLES.map(r => (
-                                  <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                                  <SelectItem key={r.value} value={r.value}>
+                                    {t(`team.roles.${r.label}`)}
+                                  </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
                           </div>
                           <div>
-                            <Label className="text-xs">Nouveau mot de passe (optionnel)</Label>
+                            <Label className="text-xs">{t('team.newPassword')}</Label>
                             <Input type="password" value={editForm.password ?? ""}
                               onChange={e => setEditForm(p => ({ ...p, password: e.target.value }))}
-                              placeholder="Laisser vide = inchangé"
+                              placeholder={t('team.passwordOptional')}
                               className="mt-1 h-8 text-sm" />
                           </div>
                           <div className="flex gap-2 pt-1">
@@ -264,12 +277,12 @@ const Team: React.FC = () => {
                               disabled={updateMutation.isPending}
                               className="flex-1 h-8 gap-1">
                               <Check className="w-3 h-3" />
-                              {updateMutation.isPending ? "..." : "Sauver"}
+                              {updateMutation.isPending ? "..." : t('common.save')}
                             </Button>
                             <Button type="button" size="sm" variant="outline"
                               onClick={() => setEditId(null)}
                               className="flex-1 h-8 gap-1">
-                              <X className="w-3 h-3" /> Annuler
+                              <X className="w-3 h-3" /> {t('common.cancel')}
                             </Button>
                           </div>
                         </form>
@@ -285,23 +298,23 @@ const Team: React.FC = () => {
                                 {user.email}
                               </p>
                             </div>
-                            <span className={`text-xs px-2 py-1 rounded-full font-medium ml-2 shrink-0 ${ri.color}`}>
-                              {ri.label}
+                            <span className={`text-xs px-2 py-1 rounded-full font-medium ml-2 shrink-0 ${roleColor}`}>
+                              {roleLabel}
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground/60 mb-3">
-                            Créé le {new Date(user.createdAt).toLocaleDateString("fr-FR")}
+                            {t('team.createdOn')} {new Date(user.createdAt).toLocaleDateString("fr-FR")}
                           </p>
                           <div className="flex gap-2">
                             <Button size="sm" variant="outline"
                               onClick={() => startEdit(user)}
                               className="flex-1 h-8 gap-1 text-xs">
-                              <Pencil className="w-3 h-3" /> Modifier
+                              <Pencil className="w-3 h-3" /> {t('common.edit')}
                             </Button>
                             <Button size="sm" variant="outline"
                               onClick={() => setDeleteTarget(user)}
                               className="flex-1 h-8 gap-1 text-xs text-red-600 hover:text-red-700 hover:border-red-300">
-                              <Trash2 className="w-3 h-3" /> Supprimer
+                              <Trash2 className="w-3 h-3" /> {t('common.delete')}
                             </Button>
                           </div>
                         </>
@@ -319,18 +332,18 @@ const Team: React.FC = () => {
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer ce compte ?</AlertDialogTitle>
+            <AlertDialogTitle>{t('team.deleteConfirmTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Vous allez supprimer <strong>{deleteTarget?.name || deleteTarget?.email}</strong>.
-              Cette action est irréversible.
+              {t('team.deleteConfirmDescription')} <strong>{deleteTarget?.name || deleteTarget?.email}</strong>.
+              {t('team.deleteConfirmWarning')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
               className="bg-red-600 hover:bg-red-700">
-              Supprimer
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

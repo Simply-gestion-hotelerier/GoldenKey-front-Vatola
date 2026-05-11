@@ -1,3 +1,4 @@
+// src/pages/restaurant/Restaurant.tsx
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -29,24 +30,53 @@ import { toast } from "@/hooks/use-toast";
 import { useState } from "react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { useTranslation } from "react-i18next";
 
 const Restaurant = () => {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const navigate = useNavigate();
 
-  // États pour l'exportation améliorée
   const [exportRestaurantOpen, setExportRestaurantOpen] = useState(false);
   const [exportRestaurantLoading, setExportRestaurantLoading] = useState(false);
 
-  const { data: openOrders = [], isLoading: loadingOpen } = useQuery({ queryKey: ["restaurant","orders","open"], queryFn: () => api.get<any[]>("/restaurant/orders?dept=restaurant&status=open") });
-  const { data: allOrders = [], isLoading: loadingAll } = useQuery({ queryKey: ["restaurant","orders","all"], queryFn: () => api.get<any[]>("/restaurant/orders?dept=restaurant") });
-  const { data: tables = [], isLoading: loadingTables } = useQuery({ queryKey: ["restaurant","tables"], queryFn: () => api.get<any[]>("/restaurant/tables") });
+  const { data: openOrders = [], isLoading: loadingOpen } = useQuery({ 
+    queryKey: ["restaurant","orders","open"], 
+    queryFn: () => api.get<any[]>("/restaurant/orders?dept=restaurant&status=open") 
+  });
+  const { data: allOrders = [], isLoading: loadingAll } = useQuery({ 
+    queryKey: ["restaurant","orders","all"], 
+    queryFn: () => api.get<any[]>("/restaurant/orders?dept=restaurant") 
+  });
+  const { data: tables = [], isLoading: loadingTables } = useQuery({ 
+    queryKey: ["restaurant","tables"], 
+    queryFn: () => api.get<any[]>("/restaurant/tables") 
+  });
 
-  const reportsToday = useQuery({ queryKey: ["reports","daily","restaurant"], queryFn: () => api.get<any>(`/reports/daily?dept=restaurant&date=${new Date().toISOString().slice(0,10)}`), enabled: true });
+  const reportsToday = useQuery({ 
+    queryKey: ["reports","daily","restaurant"], 
+    queryFn: () => api.get<any>(`/reports/daily?dept=restaurant&date=${new Date().toISOString().slice(0,10)}`), 
+    enabled: true 
+  });
 
-  const deleteOrder = useMutation({ mutationFn: (id:number) => api.del(`/restaurant/orders/${id}`), onSuccess: () => { qc.invalidateQueries({ queryKey: ["restaurant","orders","all"] }); toast({ title: 'Commande supprimée' }); }, onError: (e:any)=> toast({ title:'Erreur suppression', description: String(e), variant:'destructive' }) });
+  const deleteOrder = useMutation({ 
+    mutationFn: (id:number) => api.del(`/restaurant/orders/${id}`), 
+    onSuccess: () => { 
+      qc.invalidateQueries({ queryKey: ["restaurant","orders","all"] }); 
+      toast({ title: t('restaurant.orderDeleted') }); 
+    }, 
+    onError: (e:any)=> toast({ title: t('common.error'), description: String(e), variant:'destructive' }) 
+  });
 
-  const closeOrder = useMutation({ mutationFn: (orderId:number) => api.post(`/restaurant/orders/${orderId}/close`), onSuccess: () => { qc.invalidateQueries({ queryKey: ["restaurant","orders","open"] }); qc.invalidateQueries({ queryKey: ["restaurant","orders","all"] }); toast({ title: 'Commande clôturée' }); }, onError: (e:any)=> toast({ title:'Erreur', description: String(e), variant:'destructive' }) });
+  const closeOrder = useMutation({ 
+    mutationFn: (orderId:number) => api.post(`/restaurant/orders/${orderId}/close`), 
+    onSuccess: () => { 
+      qc.invalidateQueries({ queryKey: ["restaurant","orders","open"] }); 
+      qc.invalidateQueries({ queryKey: ["restaurant","orders","all"] }); 
+      toast({ title: t('restaurant.orderClosed') }); 
+    }, 
+    onError: (e:any)=> toast({ title: t('common.error'), description: String(e), variant:'destructive' }) 
+  });
 
   const getStatusBadge = (status: string) => {
     const styles = {
@@ -55,10 +85,16 @@ const Restaurant = () => {
       cancelled: "bg-muted text-muted-foreground border-muted",
     } as Record<string,string>;
 
-    const labels: Record<string,string> = { open: 'Active', closed: 'Fermée', cancelled: 'Annulée' };
+    const labels: Record<string,string> = { 
+      open: t('restaurant.statusActive'), 
+      closed: t('restaurant.statusClosed'), 
+      cancelled: t('restaurant.statusCancelled') 
+    };
 
     return (
-      <Badge variant="outline" className={styles[status] || styles.open}>{labels[status] || labels.open}</Badge>
+      <Badge variant="outline" className={styles[status] || styles.open}>
+        {labels[status] || labels.open}
+      </Badge>
     );
   };
 
@@ -70,58 +106,20 @@ const Restaurant = () => {
     .filter((o:any)=> o.status === 'closed')
     .reduce((sum:number, o:any)=> sum + (o.lines?.reduce((s:number,l:any)=> s + (l.qty||0), 0) || 0), 0);
 
-  // Options d'exportation améliorées
   const exportOptions = [
-    {
-      format: 'excel',
-      label: 'Excel',
-      extension: '.xlsx',
-      icon: FileSpreadsheet,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
-      hoverColor: 'hover:bg-green-100',
-      description: 'Tableur optimisé'
-    },
-    {
-      format: 'csv',
-      label: 'CSV',
-      extension: '.csv',
-      icon: Table,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-      hoverColor: 'hover:bg-blue-100',
-      description: 'Données avec séparateurs espaces'
-    },
-    {
-      format: 'txt',
-      label: 'Texte',
-      extension: '.txt',
-      icon: FileText,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
-      hoverColor: 'hover:bg-purple-100',
-      description: 'Format lisible'
-    },
-    {
-      format: 'json',
-      label: 'JSON',
-      extension: '.json',
-      icon: FileCode,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50',
-      hoverColor: 'hover:bg-orange-100',
-      description: 'Données brutes API'
-    }
+    { format: 'excel', label: t('export.excel'), extension: '.xlsx', icon: FileSpreadsheet, color: 'text-green-600', bgColor: 'bg-green-50', hoverColor: 'hover:bg-green-100', description: t('export.excelDescription') },
+    { format: 'csv', label: t('export.csv'), extension: '.csv', icon: Table, color: 'text-blue-600', bgColor: 'bg-blue-50', hoverColor: 'hover:bg-blue-100', description: t('export.csvDescription') },
+    { format: 'txt', label: t('export.txt'), extension: '.txt', icon: FileText, color: 'text-purple-600', bgColor: 'bg-purple-50', hoverColor: 'hover:bg-purple-100', description: t('export.txtDescription') },
+    { format: 'json', label: t('export.json'), extension: '.json', icon: FileCode, color: 'text-orange-600', bgColor: 'bg-orange-50', hoverColor: 'hover:bg-orange-100', description: t('export.jsonDescription') }
   ];
 
-  // Préparer les données pour l'export
   const prepareExportData = () => {
     const aujourdhui = new Date().toISOString().slice(0, 10);
     
     const commandesActives = openOrders.map((order: any) => ({
       id: order.id,
       table: order.table?.code || order.table?.name || order.tableId || 'N/A',
-      statut: 'Active',
+      statut: t('restaurant.statusActive'),
       articles: order.lines?.map((l: any) => `${l.itemName} × ${l.qty}`).join(', ') || '',
       total: order.lines?.reduce((s: any, l: any) => s + (l.unitPrice || 0) * l.qty, 0) || 0,
       heureOuverture: new Date(order.openedAt || order.opened_at || Date.now()).toLocaleTimeString('fr-FR'),
@@ -133,7 +131,7 @@ const Restaurant = () => {
       .map((order: any) => ({
         id: order.id,
         table: order.table?.code || order.table?.name || order.tableId || 'N/A',
-        statut: 'Fermée',
+        statut: t('restaurant.statusClosed'),
         articles: order.lines?.map((l: any) => `${l.itemName} × ${l.qty}`).join(', ') || '',
         total: order.lines?.reduce((s: any, l: any) => s + (l.unitPrice || 0) * l.qty, 0) || 0,
         heureFermeture: new Date(order.closedAt || order.closed_at || Date.now()).toLocaleTimeString('fr-FR'),
@@ -147,12 +145,12 @@ const Restaurant = () => {
       caJournalier: dailyRevenue,
       platsServis: dishesServed,
       dateExport: new Date().toLocaleString('fr-FR'),
-      hotelName: "Simply Hotel - Restaurant"
+      hotelName: t('restaurant.hotelName')
     };
 
     return {
       metadata: {
-        hotelName: "Simply Hotel - Restaurant",
+        hotelName: t('restaurant.hotelName'),
         exportDate: new Date().toLocaleString('fr-FR'),
         periode: aujourdhui,
         totalCommandes: allOrders.length
@@ -163,231 +161,133 @@ const Restaurant = () => {
     };
   };
 
-  // Export CSV avec séparateurs espaces
   const exportToCSV = (data: any) => {
-    const csvContent = generateCSVContent(data);
-    const blob = new Blob([csvContent], { 
-      type: 'text/csv;charset=utf-8;' 
-    });
-    saveAs(blob, `rapport-restaurant-${data.metadata.periode}.csv`);
-  };
+    let csvContent = "\uFEFF";
+    csvContent += `${t('restaurant.exportReport')}\n`;
+    csvContent += `${t('common.period')}: ${data.metadata.periode}\n`;
+    csvContent += `${t('export.title')}: ${data.metadata.exportDate}\n`;
+    csvContent += `${t('restaurant.totalOrders')}: ${data.metadata.totalCommandes}\n\n`;
 
-  const generateCSVContent = (data: any): string => {
-    let csvContent = "\uFEFF"; // BOM UTF-8
-    
-    // En-tête du rapport
-    csvContent += "RAPPORT RESTAURANT - SIMPLY HOTEL\n";
-    csvContent += `Période: ${data.metadata.periode}\n`;
-    csvContent += `Exporté le: ${data.metadata.exportDate}\n`;
-    csvContent += `Total commandes: ${data.metadata.totalCommandes}\n\n`;
+    csvContent += `${t('restaurant.statisticsSummary')}\n`;
+    csvContent += `${t('restaurant.metric')},${t('restaurant.value')}\n`;
+    csvContent += `${t('restaurant.occupiedTables')},${data.statistiques.tablesOccupees}/${data.statistiques.totalTables}\n`;
+    csvContent += `${t('restaurant.activeOrders')},${data.statistiques.commandesActives}\n`;
+    csvContent += `${t('restaurant.dailyRevenue')},${new Intl.NumberFormat('fr-FR').format(data.statistiques.caJournalier)} Ar\n`;
+    csvContent += `${t('restaurant.dishesServed')},${data.statistiques.platsServis}\n\n`;
 
-    // Section statistiques avec séparateur espace
-    csvContent += "SYNTHÈSE DES STATISTIQUES\n";
-    csvContent += "Métrique          Valeur\n";
-    csvContent += `Tables occupées   ${data.statistiques.tablesOccupees}/${data.statistiques.totalTables}\n`;
-    csvContent += `Commandes actives ${data.statistiques.commandesActives}\n`;
-    csvContent += `CA journalier     ${new Intl.NumberFormat('fr-FR').format(data.statistiques.caJournalier)} Ar\n`;
-    csvContent += `Plats servis      ${data.statistiques.platsServis}\n\n`;
-
-    // Section commandes actives avec formatage aligné
-    csvContent += "COMMANDES ACTIVES\n";
-    csvContent += "ID    Table  Statut  Articles                                    Total (Ar)  Heure     Date\n";
+    csvContent += `${t('restaurant.activeOrdersList')}\n`;
+    csvContent += `${t('restaurant.id')},${t('restaurant.table')},${t('common.status')},${t('restaurant.items')},${t('restaurant.totalAr')},${t('restaurant.time')},${t('common.date')}\n`;
     
     data.commandesActives.forEach((commande: any) => {
-      const ligne = [
-        commande.id.toString().padEnd(5),
-        commande.table.padEnd(6),
-        commande.statut.padEnd(7),
-        commande.articles.padEnd(42),
-        new Intl.NumberFormat('fr-FR').format(commande.total).padEnd(11),
-        commande.heureOuverture.padEnd(9),
-        commande.dateOuverture
-      ].join('  '); // Double espace comme séparateur
-      
-      csvContent += ligne + '\n';
+      csvContent += `${commande.id},${commande.table},${commande.statut},"${commande.articles}",${commande.total},${commande.heureOuverture},${commande.dateOuverture}\n`;
     });
 
-    csvContent += '\n';
-
-    // Section commandes fermées avec formatage aligné
-    csvContent += "COMMANDES FERMÉES\n";
-    csvContent += "ID    Table  Statut  Articles                                    Total (Ar)  Heure     Date\n";
+    csvContent += `\n${t('restaurant.closedOrdersList')}\n`;
+    csvContent += `${t('restaurant.id')},${t('restaurant.table')},${t('common.status')},${t('restaurant.items')},${t('restaurant.totalAr')},${t('restaurant.time')},${t('common.date')}\n`;
     
     data.commandesFermees.slice(0, 50).forEach((commande: any) => {
-      const ligne = [
-        commande.id.toString().padEnd(5),
-        commande.table.padEnd(6),
-        commande.statut.padEnd(7),
-        commande.articles.padEnd(42),
-        new Intl.NumberFormat('fr-FR').format(commande.total).padEnd(11),
-        commande.heureFermeture.padEnd(9),
-        commande.dateFermeture
-      ].join('  '); // Double espace comme séparateur
-      
-      csvContent += ligne + '\n';
+      csvContent += `${commande.id},${commande.table},${commande.statut},"${commande.articles}",${commande.total},${commande.heureFermeture},${commande.dateFermeture}\n`;
     });
 
-    return csvContent;
+    saveAs(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }), `restaurant-report-${data.metadata.periode}.csv`);
   };
 
-  // Export Excel amélioré
   const exportToExcel = (data: any) => {
     const workbook = XLSX.utils.book_new();
     
-    // Feuille de synthèse
     const syntheseData = [
-      ["RAPPORT RESTAURANT - SIMPLY HOTEL", ""],
-      ["Période", data.metadata.periode],
-      ["Exporté le", data.metadata.exportDate],
-      ["Total commandes", data.metadata.totalCommandes],
+      [t('restaurant.exportReport'), ""],
+      [t('common.period'), data.metadata.periode],
+      [t('export.title'), data.metadata.exportDate],
+      [t('restaurant.totalOrders'), data.metadata.totalCommandes],
       ["", ""],
-      ["SYNTHÈSE DES STATISTIQUES", ""],
-      ["Tables occupées", `${data.statistiques.tablesOccupees}/${data.statistiques.totalTables}`],
-      ["Commandes actives", data.statistiques.commandesActives],
-      ["CA journalier", data.statistiques.caJournalier],
-      ["Plats servis", data.statistiques.platsServis]
+      [t('restaurant.statisticsSummary'), ""],
+      [t('restaurant.occupiedTables'), `${data.statistiques.tablesOccupees}/${data.statistiques.totalTables}`],
+      [t('restaurant.activeOrders'), data.statistiques.commandesActives],
+      [t('restaurant.dailyRevenue'), data.statistiques.caJournalier],
+      [t('restaurant.dishesServed'), data.statistiques.platsServis]
     ];
 
     const syntheseWorksheet = XLSX.utils.aoa_to_sheet(syntheseData);
-    syntheseWorksheet['!cols'] = [
-      { wch: 25 },
-      { wch: 20 }
-    ];
-    XLSX.utils.book_append_sheet(workbook, syntheseWorksheet, "Synthèse");
+    syntheseWorksheet['!cols'] = [{ wch: 25 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(workbook, syntheseWorksheet, t('restaurant.summary'));
 
-    // Feuille des commandes actives
-    const activesHeaders = ["ID", "Table", "Statut", "Articles", "Total (Ar)", "Heure Ouverture", "Date Ouverture"];
-    const activesData = data.commandesActives.map((commande: any) => [
-      commande.id,
-      commande.table,
-      commande.statut,
-      commande.articles,
-      commande.total,
-      commande.heureOuverture,
-      commande.dateOuverture
-    ]);
-
+    const activesHeaders = [t('restaurant.id'), t('restaurant.table'), t('common.status'), t('restaurant.items'), t('restaurant.totalAr'), t('restaurant.openingTime'), t('restaurant.openingDate')];
+    const activesData = data.commandesActives.map((commande: any) => [commande.id, commande.table, commande.statut, commande.articles, commande.total, commande.heureOuverture, commande.dateOuverture]);
     const activesWorksheet = XLSX.utils.aoa_to_sheet([activesHeaders, ...activesData]);
-    activesWorksheet['!cols'] = [
-      { wch: 8 },   // ID
-      { wch: 10 },  // Table
-      { wch: 12 },  // Statut
-      { wch: 40 },  // Articles
-      { wch: 12 },  // Total
-      { wch: 12 },  // Heure
-      { wch: 12 }   // Date
-    ];
-    XLSX.utils.book_append_sheet(workbook, activesWorksheet, "Commandes Actives");
+    activesWorksheet['!cols'] = [{ wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 40 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(workbook, activesWorksheet, t('restaurant.activeOrders'));
 
-    // Feuille des commandes fermées
-    const fermeesHeaders = ["ID", "Table", "Statut", "Articles", "Total (Ar)", "Heure Fermeture", "Date Fermeture"];
-    const fermeesData = data.commandesFermees.slice(0, 100).map((commande: any) => [
-      commande.id,
-      commande.table,
-      commande.statut,
-      commande.articles,
-      commande.total,
-      commande.heureFermeture,
-      commande.dateFermeture
-    ]);
-
+    const fermeesHeaders = [t('restaurant.id'), t('restaurant.table'), t('common.status'), t('restaurant.items'), t('restaurant.totalAr'), t('restaurant.closingTime'), t('restaurant.closingDate')];
+    const fermeesData = data.commandesFermees.slice(0, 100).map((commande: any) => [commande.id, commande.table, commande.statut, commande.articles, commande.total, commande.heureFermeture, commande.dateFermeture]);
     const fermeesWorksheet = XLSX.utils.aoa_to_sheet([fermeesHeaders, ...fermeesData]);
-    fermeesWorksheet['!cols'] = [
-      { wch: 8 },   // ID
-      { wch: 10 },  // Table
-      { wch: 12 },  // Statut
-      { wch: 40 },  // Articles
-      { wch: 12 },  // Total
-      { wch: 12 },  // Heure
-      { wch: 12 }   // Date
-    ];
-    XLSX.utils.book_append_sheet(workbook, fermeesWorksheet, "Commandes Fermées");
+    fermeesWorksheet['!cols'] = [{ wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 40 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(workbook, fermeesWorksheet, t('restaurant.closedOrders'));
 
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    });
-
-    saveAs(blob, `rapport-restaurant-${data.metadata.periode}.xlsx`);
+    saveAs(new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `restaurant-report-${data.metadata.periode}.xlsx`);
   };
 
-  // Export TXT amélioré
   const exportToTXT = (data: any) => {
     const textContent = `
-RAPPORT RESTAURANT - SIMPLY HOTEL
-==================================
+${t('restaurant.exportReport')}
+${"=".repeat(50)}
 
-INFORMATIONS GÉNÉRALES
------------------------
-Restaurant : ${data.metadata.hotelName}
-Période : ${data.metadata.periode}
-Exporté le : ${data.metadata.exportDate}
-Total commandes : ${data.metadata.totalCommandes}
+${t('restaurant.generalInfo')}
+${t('restaurant.restaurantName')}: ${data.metadata.hotelName}
+${t('common.period')}: ${data.metadata.periode}
+${t('export.title')}: ${data.metadata.exportDate}
+${t('restaurant.totalOrders')}: ${data.metadata.totalCommandes}
 
-SYNTHÈSE DES STATISTIQUES
--------------------------
-• Tables occupées : ${data.statistiques.tablesOccupees}/${data.statistiques.totalTables}
-• Commandes actives : ${data.statistiques.commandesActives}
-• CA journalier : ${new Intl.NumberFormat('fr-FR').format(data.statistiques.caJournalier)} Ar
-• Plats servis : ${data.statistiques.platsServis}
+${t('restaurant.statisticsSummary')}
+• ${t('restaurant.occupiedTables')}: ${data.statistiques.tablesOccupees}/${data.statistiques.totalTables}
+• ${t('restaurant.activeOrders')}: ${data.statistiques.commandesActives}
+• ${t('restaurant.dailyRevenue')}: ${new Intl.NumberFormat('fr-FR').format(data.statistiques.caJournalier)} Ar
+• ${t('restaurant.dishesServed')}: ${data.statistiques.platsServis}
 
-COMMANDES ACTIVES (${data.commandesActives.length})
------------------------------------------------
+${t('restaurant.activeOrdersList')} (${data.commandesActives.length})
 ${data.commandesActives.map((commande: any, index: number) => `
-${index + 1}. Commande #${commande.id}
-    Table: ${commande.table}
-    Statut: ${commande.statut}
-    Articles: ${commande.articles}
-    Total: ${new Intl.NumberFormat('fr-FR').format(commande.total)} Ar
-    Ouverte le: ${commande.dateOuverture} à ${commande.heureOuverture}
+${index + 1}. ${t('restaurant.order')} #${commande.id}
+   ${t('restaurant.table')}: ${commande.table}
+   ${t('common.status')}: ${commande.statut}
+   ${t('restaurant.items')}: ${commande.articles}
+   ${t('restaurant.total')}: ${new Intl.NumberFormat('fr-FR').format(commande.total)} Ar
+   ${t('restaurant.openedOn')}: ${commande.dateOuverture} ${t('restaurant.at')} ${commande.heureOuverture}
 `).join('\n')}
 
-COMMANDES FERMÉES (${Math.min(data.commandesFermees.length, 50)} premières)
----------------------------------------------------------
+${t('restaurant.closedOrdersList')} (${Math.min(data.commandesFermees.length, 50)} ${t('restaurant.first')})
 ${data.commandesFermees.slice(0, 50).map((commande: any, index: number) => `
-${index + 1}. Commande #${commande.id}
-    Table: ${commande.table}
-    Statut: ${commande.statut}
-    Articles: ${commande.articles}
-    Total: ${new Intl.NumberFormat('fr-FR').format(commande.total)} Ar
-    Fermée le: ${commande.dateFermeture} à ${commande.heureFermeture}
+${index + 1}. ${t('restaurant.order')} #${commande.id}
+   ${t('restaurant.table')}: ${commande.table}
+   ${t('common.status')}: ${commande.statut}
+   ${t('restaurant.items')}: ${commande.articles}
+   ${t('restaurant.total')}: ${new Intl.NumberFormat('fr-FR').format(commande.total)} Ar
+   ${t('restaurant.closedOn')}: ${commande.dateFermeture} ${t('restaurant.at')} ${commande.heureFermeture}
 `).join('\n')}
 
 ---
-Rapport généré automatiquement par Simply Hotel
-Système de gestion hôtelière
+${t('restaurant.reportGenerated')}
     `.trim();
 
-    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
-    saveAs(blob, `rapport-restaurant-${data.metadata.periode}.txt`);
+    saveAs(new Blob([textContent], { type: 'text/plain;charset=utf-8' }), `restaurant-report-${data.metadata.periode}.txt`);
   };
 
-  // Export JSON amélioré
   const exportToJSON = (data: any) => {
     const jsonData = {
-      restaurant: "Simply Hotel - Restaurant",
-      dateExport: new Date().toISOString(),
-      periode: data.metadata.periode,
-      totalCommandes: data.metadata.totalCommandes,
-      statistiques: data.statistiques,
-      commandesActives: data.commandesActives,
-      commandesFermees: data.commandesFermees.slice(0, 100) // Limiter à 100 commandes
+      restaurant: t('restaurant.hotelName'),
+      exportDate: new Date().toISOString(),
+      period: data.metadata.periode,
+      totalOrders: data.metadata.totalCommandes,
+      statistics: data.statistiques,
+      activeOrders: data.commandesActives,
+      closedOrders: data.commandesFermees.slice(0, 100)
     };
-
-    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { 
-      type: 'application/json;charset=utf-8' 
-    });
-    saveAs(blob, `rapport-restaurant-${data.metadata.periode}.json`);
+    saveAs(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' }), `restaurant-report-${data.metadata.periode}.json`);
   };
 
-  // Gestion de l'export améliorée
   const exporterRestaurant = async (formatType: string) => {
     if (allOrders.length === 0 && openOrders.length === 0) {
-      toast({
-        title: "Aucune donnée à exporter",
-        description: "Il n'y a aucune commande à exporter",
-        variant: "destructive"
-      });
+      toast({ title: t('export.noDataToExport'), variant: "destructive" });
       return;
     }
 
@@ -398,33 +298,16 @@ Système de gestion hôtelière
       const data = prepareExportData();
 
       switch (formatType) {
-        case 'csv':
-          exportToCSV(data);
-          break;
-        case 'excel':
-          exportToExcel(data);
-          break;
-        case 'txt':
-          exportToTXT(data);
-          break;
-        case 'json':
-          exportToJSON(data);
-          break;
-        default:
-          break;
+        case 'csv': exportToCSV(data); break;
+        case 'excel': exportToExcel(data); break;
+        case 'txt': exportToTXT(data); break;
+        case 'json': exportToJSON(data); break;
       }
 
-      toast({
-        title: "Export réussi",
-        description: `${data.metadata.totalCommandes} commande(s) exportée(s) en ${formatType.toUpperCase()}`
-      });
+      toast({ title: t('export.exportSuccess'), description: `${data.metadata.totalCommandes} ${t('restaurant.ordersExported')} ${formatType.toUpperCase()}` });
     } catch (erreur) {
-      console.error('Erreur lors de l\'export:', erreur);
-      toast({
-        title: 'Erreur exportation',
-        description: String(erreur),
-        variant: 'destructive'
-      });
+      console.error('Export error:', erreur);
+      toast({ title: t('export.exportError'), description: String(erreur), variant: 'destructive' });
     } finally {
       setExportRestaurantLoading(false);
     }
@@ -436,47 +319,35 @@ Système de gestion hôtelière
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-auto p-6">
-          {/* Header avec bouton d'exportation amélioré */}
           <div className="flex justify-between items-start mb-8">
             <div>
               <h1 className="text-3xl font-bold text-foreground mb-2">
-                Restaurant
+                {t('nav.restaurant')}
               </h1>
               <p className="text-muted-foreground">
-                Commandes • Cuisine • Inventaire • Caisse
+                {t('restaurant.subtitle')}
               </p>
             </div>
             
-            {/* Bouton d'exportation amélioré */}
             <div className="relative">
               <button
                 onClick={() => setExportRestaurantOpen(!exportRestaurantOpen)}
                 disabled={exportRestaurantLoading}
-                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-blue-400 disabled:to-blue-500 text-white px-4 py-2.5 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl disabled:shadow-md font-semibold group"
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-blue-400 disabled:to-blue-500 text-white px-4 py-2.5 rounded-lg transition-all duration-200 shadow-lg font-semibold group"
               >
                 {exportRestaurantLoading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Export en cours...</span>
-                  </>
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>{t('export.exporting')}</span></>
                 ) : (
-                  <>
-                    <Download className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                    <span>Exporter les données</span>
-                    <ChevronDown className="w-4 h-4 group-hover:rotate-180 transition-transform" />
-                  </>
+                  <><Download className="w-4 h-4 group-hover:scale-110 transition-transform" /><span>{t('common.export')}</span><ChevronDown className="w-4 h-4 group-hover:rotate-180 transition-transform" /></>
                 )}
               </button>
 
               {exportRestaurantOpen && (
-                <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-10 overflow-hidden backdrop-blur-sm">
-                  {/* En-tête */}
+                <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-10">
                   <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100">
-                    <p className="text-sm font-bold text-blue-900">Format d'exportation</p>
-                    <p className="text-xs text-blue-600 mt-1">Choisissez le format souhaité</p>
+                    <p className="text-sm font-bold text-blue-900">{t('export.formats')}</p>
+                    <p className="text-xs text-blue-600 mt-1">{t('restaurant.chooseFormat')}</p>
                   </div>
-                  
-                  {/* Options d'export */}
                   <div className="p-3 space-y-2">
                     {exportOptions.map((option) => {
                       const IconComponent = option.icon;
@@ -484,104 +355,85 @@ Système de gestion hôtelière
                         <button
                           key={option.format}
                           onClick={() => exporterRestaurant(option.format)}
-                          className={`flex items-center gap-4 w-full text-left p-3 rounded-lg transition-all duration-200 border border-transparent hover:border-blue-200 ${option.bgColor} ${option.hoverColor} group/option`}
+                          className={`flex items-center gap-4 w-full text-left p-3 rounded-lg transition-all duration-200 border border-transparent hover:border-blue-200 ${option.bgColor} ${option.hoverColor}`}
                         >
-                          <div className={`p-2 rounded-lg ${option.bgColor} group-hover/option:scale-110 transition-transform`}>
+                          <div className={`p-2 rounded-lg ${option.bgColor}`}>
                             <IconComponent className={`w-5 h-5 ${option.color}`} />
                           </div>
-                          
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold text-gray-900 group-hover/option:text-blue-700 transition-colors">
-                                {option.label}
-                              </span>
-                              <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                                {option.extension}
-                              </span>
+                              <span className="font-semibold text-gray-900">{option.label}</span>
+                              <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{option.extension}</span>
                             </div>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {option.description}
-                            </p>
-                          </div>
-                          
-                          <div className="opacity-0 group-hover/option:opacity-100 transition-opacity">
-                            <Download className="w-4 h-4 text-gray-400" />
+                            <p className="text-xs text-gray-500 mt-0.5">{option.description}</p>
                           </div>
                         </button>
                       );
                     })}
                   </div>
-
-                  {/* Pied de page */}
                   <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-                    <p className="text-xs text-gray-500 text-center">
-                      {allOrders.length} commande(s) • {new Date().toLocaleDateString('fr-FR')}
-                    </p>
+                    <p className="text-xs text-gray-500 text-center">{allOrders.length} {t('restaurant.ordersCount')}</p>
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatCard
-              title="Tables Occupées"
+              title={t('restaurant.occupiedTables')}
               value={`${occupiedTableCodes.length}/${totalTables}`}
               icon={UtensilsCrossed}
               variant="default"
             />
             <StatCard
-              title="Commandes Actives"
+              title={t('restaurant.activeOrders')}
               value={String(activeOrders)}
               icon={Clock}
               variant="warning"
             />
             <StatCard
-              title="CA Aujourd'hui"
+              title={t('restaurant.dailyRevenue')}
               value={`${new Intl.NumberFormat('fr-FR').format(dailyRevenue)} Ar`}
               icon={DollarSign}
               variant="gold"
             />
             <StatCard
-              title="Plats Servis"
+              title={t('restaurant.dishesServed')}
               value={String(dishesServed)}
               icon={CheckCircle}
               variant="success"
             />
           </div>
 
-          {/* Main Content */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Quick Actions */}
             <Card>
               <CardHeader>
-                <CardTitle>Actions Rapides</CardTitle>
+                <CardTitle>{t('restaurant.quickActions')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Button className="w-full justify-start" variant="outline" onClick={()=>navigate('/restaurant/pos')}>
                   <ClipboardList className="mr-2 h-4 w-4" />
-                  Nouvelle Commande
+                  {t('restaurant.newOrder')}
                 </Button>
                 <Button className="w-full justify-start" variant="outline" onClick={()=>navigate('/restaurant/kds')}>
                   <ChefHat className="mr-2 h-4 w-4" />
-                  Vue Cuisine
+                  {t('restaurant.kitchenView')}
                 </Button>
                 <Button className="w-full justify-start" variant="outline" onClick={()=>navigate('/inventory')}>
                   <Package className="mr-2 h-4 w-4" />
-                  Inventaire
+                  {t('restaurant.inventory')}
                 </Button>
                 <Button className="w-full justify-start" variant="outline" onClick={()=>navigate('/cash')}>
                   <DollarSign className="mr-2 h-4 w-4" />
-                  Caisse
+                  {t('restaurant.cashRegister')}
                 </Button>
               </CardContent>
             </Card>
 
-            {/* Active Orders */}
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle>Commandes Actives</CardTitle>
+                <CardTitle>{t('restaurant.activeOrders')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -604,20 +456,19 @@ Système de gestion hôtelière
                         <span className="text-sm text-muted-foreground">{new Date(order.openedAt || order.opened_at || Date.now()).toLocaleTimeString('fr-FR')}</span>
                         <div className="flex items-center space-x-2">
                           <span className="font-semibold text-gold">{new Intl.NumberFormat('fr-FR').format(order.lines?.reduce((s:any,l:any)=> s + (l.unitPrice||0)*l.qty,0) || 0)} Ar</span>
-                          <Button size="sm" variant="outline" onClick={()=>closeOrder.mutate(order.id)}>Clôturer</Button>
+                          <Button size="sm" variant="outline" onClick={()=>closeOrder.mutate(order.id)}>{t('restaurant.close')}</Button>
                         </div>
                       </div>
                     </div>
                   ))}
-                  {openOrders.length===0 && <div className="text-sm text-muted-foreground">Aucune commande active</div>}
+                  {openOrders.length===0 && <div className="text-sm text-muted-foreground">{t('restaurant.noActiveOrders')}</div>}
                 </div>
               </CardContent>
             </Card>
 
-            {/* Closed Orders */}
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle>Commandes Clôturées</CardTitle>
+                <CardTitle>{t('restaurant.closedOrders')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -637,14 +488,14 @@ Système de gestion hôtelière
                         <span className="text-sm text-muted-foreground">{new Date(order.closedAt || order.closed_at || Date.now()).toLocaleString('fr-FR')}</span>
                         <div className="flex items-center space-x-2">
                           <span className="font-semibold">{new Intl.NumberFormat('fr-FR').format(order.lines?.reduce((s:any,l:any)=> s + (l.unitPrice||0)*l.qty,0) || 0)} Ar</span>
-                          <Button size="sm" variant="destructive" onClick={()=> { if(confirm('Supprimer cette commande ?')) deleteOrder.mutate(order.id); }}>
-                            <Trash2 className="h-4 w-4 mr-1"/> Supprimer
+                          <Button size="sm" variant="destructive" onClick={()=> { if(confirm(t('restaurant.deleteConfirm'))) deleteOrder.mutate(order.id); }}>
+                            <Trash2 className="h-4 w-4 mr-1"/> {t('common.delete')}
                           </Button>
                         </div>
                       </div>
                     </div>
                   ))}
-                  {(allOrders || []).filter((o:any)=> o.status === 'closed').length===0 && <div className="text-sm text-muted-foreground">Aucune commande clôturée</div>}
+                  {(allOrders || []).filter((o:any)=> o.status === 'closed').length===0 && <div className="text-sm text-muted-foreground">{t('restaurant.noClosedOrders')}</div>}
                 </div>
               </CardContent>
             </Card>

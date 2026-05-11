@@ -1,3 +1,4 @@
+// src/pages/restaurant/RestaurantKDS.tsx
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,10 +9,13 @@ import { api } from "@/lib/api";
 import { ChefHat, Clock, Utensils, MessageSquare } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 export default function RestaurantKDS() {
   const { hasScope } = useAuth();
+  const { t } = useTranslation();
   const qc = useQueryClient();
+  
   const { data: orders = [] } = useQuery({
     queryKey: ["orders", "restaurant", "open"],
     queryFn: () => api.get<any[]>(`/restaurant/orders?dept=restaurant&status=open`),
@@ -26,10 +30,10 @@ export default function RestaurantKDS() {
       ready: "bg-primary/10 text-primary border-primary/20",
     };
     const labels: Record<string, string> = {
-      commanded: "Commandé",
-      preparing: "En préparation",
-      delivered: "Livré",
-      ready: "Prêt",
+      commanded: t('restaurant.kds.commanded'),
+      preparing: t('restaurant.kds.preparing'),
+      delivered: t('restaurant.kds.delivered'),
+      ready: t('restaurant.kds.ready'),
     };
     return (
       <Badge variant="outline" className={styles[s]}> {labels[s]} </Badge>
@@ -41,17 +45,16 @@ export default function RestaurantKDS() {
       api.patch(`/restaurant/orders/${p.orderId}/lines/${p.lineId}/status`, { status: p.status }),
     onSuccess: () => { 
       qc.invalidateQueries({ queryKey: ["orders", "restaurant", "open"] }); 
-      toast({ title: 'Statut ligne', description: 'Le statut de la ligne a été mis à jour.' }); 
+      toast({ title: t('restaurant.kds.title'), description: t('common.success') }); 
     },
     onError: (err: any) => toast({ 
-      title: 'Erreur statut', 
+      title: t('common.error'), 
       description: String(err), 
       variant: 'destructive' 
     }),
   });
 
   const kdsOrders = orders.filter((o: any) => o.status === "open");
-
   const canChange = hasScope("orders:status");
 
   return (
@@ -61,8 +64,8 @@ export default function RestaurantKDS() {
         <Header />
         <main className="flex-1 overflow-auto p-6">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold">Cuisine • KDS</h1>
-            <p className="text-muted-foreground">Flux temps réel des commandes</p>
+            <h1 className="text-3xl font-bold">{t('restaurant.kds.title')}</h1>
+            <p className="text-muted-foreground">{t('restaurant.kds.subtitle')}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -73,7 +76,9 @@ export default function RestaurantKDS() {
                     {col === "commanded" && <Clock className="h-5 w-5" />}
                     {col === "preparing" && <ChefHat className="h-5 w-5" />}
                     {col === "delivered" && <Utensils className="h-5 w-5" />}
-                    {col === "commanded" ? "Commandé" : col === "preparing" ? "En préparation" : "Livré"}
+                    {col === "commanded" ? t('restaurant.kds.commanded') : 
+                     col === "preparing" ? t('restaurant.kds.preparing') : 
+                     t('restaurant.kds.delivered')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -89,10 +94,9 @@ export default function RestaurantKDS() {
                                   {(l.itemName || l.item_name)} × {l.qty}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  Commande #{o.id} • Table {o.table?.code || o.table_id}
+                                  {t('restaurant.kds.orderNumber', { id: o.id })} • {t('restaurant.kds.table')} {o.table?.code || o.table_id}
                                 </div>
                                 
-                                {/* 👇 AFFICHAGE DU COMMENTAIRE */}
                                 {l.comment && (
                                   <div className="mt-2 text-xs italic bg-muted/30 p-2 rounded flex items-start gap-1.5 border-l-2 border-primary">
                                     <MessageSquare className="h-3 w-3 mt-0.5 flex-shrink-0 text-primary" />
@@ -114,7 +118,7 @@ export default function RestaurantKDS() {
                                     status: "preparing" 
                                   })}
                                 >
-                                  Passer en préparation
+                                  {t('restaurant.kds.markAsPreparing')}
                                 </Button>
                               )}
                               {(l.fireStatus || l.fire_status) === "preparing" && (
@@ -127,7 +131,7 @@ export default function RestaurantKDS() {
                                     status: "delivered" 
                                   })}
                                 >
-                                  Marquer livré
+                                  {t('restaurant.kds.markAsDelivered')}
                                 </Button>
                               )}
                             </div>
@@ -135,12 +139,11 @@ export default function RestaurantKDS() {
                         ))
                     )}
                     
-                    {/* Message si aucune commande dans cette colonne */}
                     {kdsOrders.flatMap((o: any) => 
                       o.lines.filter((l: any) => (l.fireStatus || l.fire_status) === col)
                     ).length === 0 && (
                       <div className="text-center py-8 text-sm text-muted-foreground border rounded-md bg-muted/5">
-                        Aucune commande
+                        {t('restaurant.kds.noOrders')}
                       </div>
                     )}
                   </div>
