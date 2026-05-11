@@ -1,15 +1,15 @@
 // ============================================================
-// MODIFICATIONS APPLIQUÉES :
-// 1. Facture 80mm : affiche montant consommé + frais 5% carte + total prélevé
-// 2. Facture A4   : idem, section info frais bancaires claire
-// 3. UI Détails   : affiche le total prélevé sur carte (info seulement)
-//                   Le système encaisse UNIQUEMENT le montant consommé
+// MODIFICATIONS APPLIED:
+// 1. 80mm Invoice: displays consumed amount + 5% card fee + total debited
+// 2. A4 Invoice: same, clear bank fee info section
+// 3. UI Details: displays total debited from card (info only)
+//    System ONLY collects the consumed amount
 // ────────────────────────────────────────────────────────────
-// CORRECTIONS FOLIOS CHAMBRE :
-// FIX 1 — getFolioOrders : détection robuste via payments.folioId
-// FIX 2 — FolioExpandedDetail : totalPaid inclut les paiements directs
-//          sur commandes resto (ordersPaidDirectly)
-// FIX 3 — toggleFolio : refetchFolioOrders() à chaque ouverture
+// ROOM FOLIO FIXES:
+// FIX 1 — getFolioOrders: robust detection via payments.folioId
+// FIX 2 — FolioExpandedDetail: totalPaid includes direct payments
+//          on restaurant orders (ordersPaidDirectly)
+// FIX 3 — toggleFolio: refetchFolioOrders() on each open
 // ============================================================
 
 import { Header } from "@/components/layout/header";
@@ -32,32 +32,32 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
-// ── Helpers numéros ────────────────────────────────────────────────────────────
+// ── Helpers numbers ────────────────────────────────────────────────────────────
 
 const generateInvoiceNumber = (_orderId?: number) => {
-  const lettres = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   let code5 = "";
-  for (let i = 0; i < 5; i++) code5 += lettres.charAt(Math.floor(Math.random() * lettres.length));
-  return `FACT-${code5}`;
+  for (let i = 0; i < 5; i++) code5 += letters.charAt(Math.floor(Math.random() * letters.length));
+  return `INV-${code5}`;
 };
 
 const formatOrderNumber = (orderId: number, createdAt?: string) => {
-  if (!createdAt) return `CMD-${String(orderId).padStart(6, "0")}`;
+  if (!createdAt) return `ORD-${String(orderId).padStart(6, "0")}`;
   const date = new Date(createdAt);
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
-  return `CMD-${year}${month}${day}-${String(orderId).padStart(4, "0")}`;
+  return `ORD-${year}${month}${day}-${String(orderId).padStart(4, "0")}`;
 };
 
-// ── Constantes ─────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-  { key: "beverage", label: "Boisson" },
-  { key: "breakfast", label: "Petit déjeuner" },
-  { key: "appetizer", label: "Entrée" },
-  { key: "main_course", label: "Plat principal" },
-  { key: "side_dish", label: "Accompagnement" },
+  { key: "beverage", label: "Beverage" },
+  { key: "breakfast", label: "Breakfast" },
+  { key: "appetizer", label: "Appetizer" },
+  { key: "main_course", label: "Main Course" },
+  { key: "side_dish", label: "Side Dish" },
   { key: "dessert", label: "Dessert" },
   { key: "snack", label: "Snack" },
 ];
@@ -86,7 +86,7 @@ const FIRE_STYLE: Record<string, string> = {
   voided: "bg-red-100 text-red-800 border-red-200",
 };
 const FIRE_LABEL: Record<string, string> = {
-  commanded: "Commandé", preparing: "En prépa", ready: "Prêt", delivered: "Livré", voided: "Annulé",
+  commanded: "Ordered", preparing: "Preparing", ready: "Ready", delivered: "Delivered", voided: "Cancelled",
 };
 const FIRE_ICON: Record<string, string> = {
   commanded: "⏳", preparing: "🔥", ready: "✅", delivered: "🍽", voided: "❌",
@@ -100,7 +100,7 @@ function FireBadge({ status }: { status: string }) {
   );
 }
 
-// ── Infos restaurant ───────────────────────────────────────────────────────────
+// ── Restaurant info ───────────────────────────────────────────────────────────
 
 const RESTAURANT = {
   name: "MAHAFALY Hotel",
@@ -127,17 +127,17 @@ const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const METHOD_LBL: Record<string, string> = {
-  cash: "Espèces",
-  card: "Carte bancaire",
+  cash: "Cash",
+  card: "Credit Card",
   mobile: "Mobile Money",
-  voucher: "Ticket resto",
-  bank: "Virement bancaire",
+  voucher: "Meal Voucher",
+  bank: "Bank Transfer",
 };
 
 function operatorLabel(p: any): string | null {
   return p?.operator?.name ?? p?.operator?.email ?? p?.operatorName ?? null;
 }
-// ── CALCULS COMMANDE ───────────────────────────────────────────────────────────
+// ── ORDER CALCULATIONS ───────────────────────────────────────────────────────────
 
 const orderSubtotal = (o: any): number =>
   (o.lines ?? []).reduce((s: number, l: any) => s + l.unitPrice * l.qty, 0);
@@ -154,7 +154,7 @@ const orderPaid = (o: any): number =>
 const orderBalance = (o: any): number =>
   Math.max(0, orderTotal(o) - orderPaid(o));
 
-// ── FRAIS CARTE : calcul informatif uniquement ─────────────────────────────────
+// ── CARD FEES: informational calculation only ─────────────────────────────────
 const CARD_FEE_RATE = 0.05;
 
 const computeCardFees = (payments: any[]): { cardAmount: number; fees: number; totalDebited: number } => {
@@ -188,16 +188,16 @@ function print80mm(tableCode: string, order: any) {
     ctr(RESTAURANT.address, W),
     ctr(RESTAURANT.phone, W),
     sep,
-    ctr("** BON DE COMMANDE / FACTURE **", W),
+    ctr("** ORDER / INVOICE **", W),
     sep,
-    padL("N° Bon     :", orderNumber, W),
-    padL("N° Facture :", invoiceNumber, W),
-    padL("Table      :", tableCode, W),
-    padL("Commande   :", `#${order.id}`, W),
-    padL("Date       :", new Date().toLocaleDateString("fr-FR"), W),
-    padL("Heure      :", new Date().toLocaleTimeString("fr-FR"), W),
+    padL("Order No    :", orderNumber, W),
+    padL("Invoice No  :", invoiceNumber, W),
+    padL("Table       :", tableCode, W),
+    padL("Order       :", `#${order.id}`, W),
+    padL("Date        :", new Date().toLocaleDateString("fr-FR"), W),
+    padL("Time        :", new Date().toLocaleTimeString("fr-FR"), W),
     sep,
-    ctr("-- ARTICLES --", W),
+    ctr("-- ITEMS --", W),
     dsh,
   ];
 
@@ -213,49 +213,49 @@ function print80mm(tableCode: string, order: any) {
   });
 
   lines.push(dsh);
-  lines.push(padL("SOUS-TOTAL", fmt(subtotal) + " Ar", W));
+  lines.push(padL("SUBTOTAL", fmt(subtotal) + " Ar", W));
 
   if (discount > 0) {
     const discLabel = order.discountReason
-      ? `REMISE (${order.discountReason.substring(0, 12)})`
-      : "REMISE";
+      ? `DISCOUNT (${order.discountReason.substring(0, 12)})`
+      : "DISCOUNT";
     lines.push(padL(discLabel, `-${fmt(discount)} Ar`, W));
     lines.push(dsh);
-    lines.push(padL("TOTAL TTC", fmt(total) + " Ar", W));
+    lines.push(padL("TOTAL INC. TAX", fmt(total) + " Ar", W));
   }
 
   if (payments.length > 0) {
-    lines.push(ctr("-- PAIEMENTS --", W));
+    lines.push(ctr("-- PAYMENTS --", W));
     payments.forEach((p: any) => {
       lines.push(padL(METHOD_LBL[p.method] ?? p.method, `${fmt(p.amount)} Ar`, W));
 
       if (p.receivedAmount && p.receivedAmount > p.amount) {
-        lines.push(padL("  Reçu      :", fmt(p.receivedAmount) + " Ar", W));
-        lines.push(padL("  Monnaie   :", fmt(p.receivedAmount - p.amount) + " Ar", W));
+        lines.push(padL("  Received   :", fmt(p.receivedAmount) + " Ar", W));
+        lines.push(padL("  Change     :", fmt(p.receivedAmount - p.amount) + " Ar", W));
       }
       const op = operatorLabel(p);
-      if (op) lines.push(`  Operateur : ${op.substring(0, 22)}`);
+      if (op) lines.push(`  Operator : ${op.substring(0, 22)}`);
     });
     lines.push(dsh);
   }
 
-  lines.push(padL(bal > 0 ? "RESTE DU" : "SOLDE", fmt(bal) + " Ar", W));
+  lines.push(padL(bal > 0 ? "REMAINING" : "PAID", fmt(bal) + " Ar", W));
   lines.push(sep);
 
   if (cardAmount > 0) {
     lines.push("");
-    lines.push(ctr("** INFO FRAIS BANCAIRES **", W));
+    lines.push(ctr("** BANK FEE INFORMATION **", W));
     lines.push(dsh);
-    lines.push(padL("Consommation reglée :", fmt(cardAmount) + " Ar", W));
-    lines.push(padL("Frais bancaires (5%):", fmt(bankFees) + " Ar", W));
+    lines.push(padL("Consumption amount :", fmt(cardAmount) + " Ar", W));
+    lines.push(padL("Bank fees (5%):", fmt(bankFees) + " Ar", W));
     lines.push(dsh);
-    lines.push(padL("TOTAL PRELEVE CARTE :", fmt(totalDebited) + " Ar", W));
-    lines.push(ctr("(frais gardés par la banque)", W));
+    lines.push(padL("TOTAL CARD DEBIT :", fmt(totalDebited) + " Ar", W));
+    lines.push(ctr("(fees retained by the bank)", W));
     lines.push(dsh);
   }
 
   lines.push("");
-  lines.push(ctr("Merci de votre visite !", W));
+  lines.push(ctr("Thank you for your visit!", W));
   lines.push(ctr("MAHAFALY Hotel", W));
   lines.push(ctr(new Date().toLocaleString("fr-FR"), W));
   lines.push("");
@@ -300,7 +300,7 @@ function printA4(tableCode: string, order: any) {
        <td style="text-align:right;padding:8px;">${fmt(l.unitPrice)} Ar</td>
        <td style="text-align:center;padding:8px;">${l.qty}</td>
        <td style="text-align:right;padding:8px;font-weight:600">${fmt(l.unitPrice * l.qty)} Ar</td>
-     </tr>`
+      </tr>`
     )
     .join("");
 
@@ -314,15 +314,15 @@ function printA4(tableCode: string, order: any) {
       <td colspan="3" style="padding:8px;color:#059669">
         💳 ${METHOD_LBL[p.method] ?? p.method} — ${new Date(p.receivedAt).toLocaleDateString("fr-FR")}
         ${p.method === "card" ? `
-            <br/><small style="color:#6b7280">Montant consommation encaissé : <strong>${fmt(p.amount)} Ar</strong></small>
-            <br/><small style="color:#dc2626">+ Frais bancaires (5%) : <strong>+${fmt(pFees)} Ar</strong> <em>(gardés par la banque)</em></small>
-            <br/><small style="color:#1d4ed8;font-weight:700">→ Total prélevé sur votre carte : ${fmt(p.amount + pFees)} Ar</small>
+            <br/><small style="color:#6b7280">Consumption amount collected: <strong>${fmt(p.amount)} Ar</strong></small>
+            <br/><small style="color:#dc2626">+ Bank fees (5%): <strong>+${fmt(pFees)} Ar</strong> <em>(retained by the bank)</em></small>
+            <br/><small style="color:#1d4ed8;font-weight:700">→ Total debited from your card: ${fmt(p.amount + pFees)} Ar</small>
           ` : ""}
         ${p.receivedAmount && p.receivedAmount > p.amount
-          ? `<br/><small style="color:#6b7280">Reçu : ${fmt(p.receivedAmount)} Ar &nbsp;|&nbsp; Monnaie rendue : ${fmt(change)} Ar</small>`
+          ? `<br/><small style="color:#6b7280">Received: ${fmt(p.receivedAmount)} Ar &nbsp;|&nbsp; Change given: ${fmt(change)} Ar</small>`
           : ""}
-        ${op ? `<br/><small style="color:#7c3aed;font-weight:600">👤 Opérateur : ${op}</small>` : ""}
-       </td>
+        ${op ? `<br/><small style="color:#7c3aed;font-weight:600">👤 Operator: ${op}</small>` : ""}
+        </td>
       <td style="text-align:right;padding:8px;color:#059669;font-weight:600">-${fmt(p.amount)} Ar</td>
      </tr>`;
     })
@@ -332,36 +332,36 @@ function printA4(tableCode: string, order: any) {
     discount > 0
       ? `<tr>
           <td colspan="3" style="text-align:right;padding:8px;color:#b45309">
-            Remise${order.discountReason ? ` — ${order.discountReason}` : ""}
+            Discount${order.discountReason ? ` — ${order.discountReason}` : ""}
             ${order.discountType === "percent" ? ` (${Math.round((discount / subtotal) * 100)}%)` : ""}
-           </td>
+            </td>
           <td style="text-align:right;padding:8px;color:#b45309;font-weight:700">-${fmt(discount)} Ar</td>
-         </tr>`
+        </tr>`
       : "";
 
   const cardFeesSummaryBlock = cardAmount > 0
     ? `<div class="card-fees-summary">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
           <span style="font-size:18px;">💳</span>
-          <strong style="color:#1e40af;font-size:14px;">Récapitulatif paiement carte bancaire</strong>
+          <strong style="color:#1e40af;font-size:14px;">Credit Card Payment Summary</strong>
         </div>
         <table style="width:100%;font-size:12px;border-collapse:collapse;">
           <tr style="border-bottom:1px solid #bfdbfe;">
-            <td style="padding:6px 0;color:#374151;">Montant de votre consommation</td>
+            <td style="padding:6px 0;color:#374151;">Consumption amount</td>
             <td style="text-align:right;padding:6px 0;font-weight:600;">${fmt(cardAmount)} Ar</td>
-          </tr>
+           </tr>
           <tr style="border-bottom:1px solid #bfdbfe;">
-            <td style="padding:6px 0;color:#dc2626;">Frais bancaires (5%) <em style="font-weight:400;color:#6b7280;">— gardés par la banque</em></td>
+            <td style="padding:6px 0;color:#dc2626;">Bank fees (5%) <em style="font-weight:400;color:#6b7280;">— retained by the bank</em></td>
             <td style="text-align:right;padding:6px 0;color:#dc2626;font-weight:600;">+${fmt(bankFees)} Ar</td>
-          </tr>
+           </tr>
           <tr style="background:#dbeafe;">
-            <td style="padding:8px;font-weight:700;color:#1e40af;border-radius:4px 0 0 4px;">TOTAL PRÉLEVÉ SUR VOTRE CARTE</td>
+            <td style="padding:8px;font-weight:700;color:#1e40af;border-radius:4px 0 0 4px;">TOTAL DEBITED FROM YOUR CARD</td>
             <td style="text-align:right;padding:8px;font-weight:700;color:#1e40af;border-radius:0 4px 4px 0;">${fmt(totalDebited)} Ar</td>
-          </tr>
-        </table>
+           </tr>
+         </table>
         <p style="margin-top:8px;font-size:10px;color:#6b7280;font-style:italic;">
-          * L'établissement encaisse uniquement le montant de votre consommation (${fmt(cardAmount)} Ar). 
-          Les frais de ${fmt(bankFees)} Ar sont directement retenus par votre banque.
+          * The establishment only collects your consumption amount (${fmt(cardAmount)} Ar). 
+          The ${fmt(bankFees)} Ar fees are directly retained by your bank.
         </p>
       </div>`
     : "";
@@ -402,27 +402,27 @@ function printA4(tableCode: string, order: any) {
         <div class="resto-details">${RESTAURANT.address}<br/>${RESTAURANT.phone} · ${RESTAURANT.email}</div>
       </div>
       <div class="invoice-info">
-        <div style="font-size:18px;font-weight:700;color:#0f2744;">FACTURE</div>
-        <div>N° ${invoiceNumber}</div>
+        <div style="font-size:18px;font-weight:700;color:#0f2744;">INVOICE</div>
+        <div>No. ${invoiceNumber}</div>
       </div>
     </div>
 
     <div class="doc-numbers">
-      <span><strong>Bon de commande N°</strong> ${orderNumber}</span>
-      <span><strong>Commande interne</strong> #${order.id}</span>
+      <span><strong>Order No.</strong> ${orderNumber}</span>
+      <span><strong>Internal Order</strong> #${order.id}</span>
     </div>
 
     <div class="info-card">
       <div class="info-item"><strong>Table:</strong> ${tableCode}</div>
       <div class="info-item"><strong>Date:</strong> ${new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })}</div>
-      <div class="info-item"><strong>Heure:</strong> ${new Date().toLocaleTimeString("fr-FR")}</div>
-      <div class="info-item"><strong>Service:</strong> ${order.serviceType ?? "Sur place"}</div>
-      <div class="info-item"><strong>Serveur:</strong> ${operatorLabel(order.payments?.[0]) ?? "—"}</div>
+      <div class="info-item"><strong>Time:</strong> ${new Date().toLocaleTimeString("fr-FR")}</div>
+      <div class="info-item"><strong>Service:</strong> ${order.serviceType ?? "Dine in"}</div>
+      <div class="info-item"><strong>Server:</strong> ${operatorLabel(order.payments?.[0]) ?? "—"}</div>
     </div>
 
     ${discount > 0
       ? `<div class="discount-banner">
-             <span>🏷️ Remise appliquée${order.discountReason ? ` : ${order.discountReason}` : ""}${order.discountType === "percent" ? ` (${Math.round((discount / subtotal) * 100)}%)` : ""}</span>
+             <span>🏷️ Discount applied${order.discountReason ? ` : ${order.discountReason}` : ""}${order.discountType === "percent" ? ` (${Math.round((discount / subtotal) * 100)}%)` : ""}</span>
              <strong>-${fmt(discount)} Ar</strong>
            </div>`
       : ""}
@@ -430,9 +430,9 @@ function printA4(tableCode: string, order: any) {
     <table>
       <thead>
         <tr>
-          <th>Désignation</th>
-          <th style="text-align:right">P.U.</th>
-          <th style="text-align:center">Qté</th>
+          <th>Item</th>
+          <th style="text-align:right">Unit Price</th>
+          <th style="text-align:center">Qty</th>
           <th style="text-align:right">Total</th>
         </tr>
       </thead>
@@ -442,32 +442,32 @@ function printA4(tableCode: string, order: any) {
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="3" style="text-align:right;font-weight:400;border-top:1px solid #e5e7eb">Sous-total</td>
+          <td colspan="3" style="text-align:right;font-weight:400;border-top:1px solid #e5e7eb">Subtotal</td>
           <td style="text-align:right;font-weight:400;border-top:1px solid #e5e7eb">${fmt(subtotal)} Ar</td>
          </tr>
         ${discountRow}
         <tr>
-          <td colspan="3" style="text-align:right">TOTAL TTC</td>
+          <td colspan="3" style="text-align:right">TOTAL INC. TAX</td>
           <td style="text-align:right">${fmt(total)} Ar</td>
          </tr>
         ${paid > 0
       ? `<tr>
-                <td colspan="3" style="text-align:right;color:#059669">TOTAL PAYÉ (encaissé)</td>
+                <td colspan="3" style="text-align:right;color:#059669">TOTAL PAID (collected)</td>
                 <td style="text-align:right;color:#059669">-${fmt(paid)} Ar</td>
-               </tr>`
+              </tr>`
       : ""}
       </tfoot>
     </table>
 
     <div class="balance" style="background:${balance > 0 ? "#fee2e2" : "#d1fae5"};color:${balance > 0 ? "#991b1b" : "#065f46"}">
-      ${balance > 0 ? `Reste dû : ${fmt(balance)} Ar` : "✓ Compte soldé"}
+      ${balance > 0 ? `Amount Due: ${fmt(balance)} Ar` : "✓ Balance Paid"}
     </div>
 
     ${cardFeesSummaryBlock}
 
     <div class="footer">
       ${RESTAURANT.name}<br/>
-      Imprimé le ${new Date().toLocaleString("fr-FR")} — Document non valable sans signature
+      Printed on ${new Date().toLocaleString("fr-FR")} — Document not valid without signature
     </div>
 
     </body></html>`);
@@ -499,8 +499,8 @@ function FolioExpandedDetail({
   const paidFolio = payments.reduce((s: number, p: any) => s + p.amount, 0);
   const totalCharges = (f?.total ?? res.rate * nights) + ordersTotal;
 
-  // ✅ FIX 2 — totalPaid inclut les paiements directs sur commandes resto
-  // (cas où la commande a été payée directement au resto, pas via folio hôtel)
+  // ✅ FIX 2 — totalPaid includes direct payments on restaurant orders
+  // (case where the order was paid directly at the restaurant, not via hotel folio)
   const ordersPaidDirectly = folioOrders.reduce((s, o) => s + orderPaid(o), 0);
   const totalPaid = paidFolio + ordersPaidDirectly;
 
@@ -532,43 +532,43 @@ function FolioExpandedDetail({
     });
 
   const handleDeleteLine = (orderId: number, lineId: number, itemName: string) => {
-    if (confirm(`Êtes-vous sûr de vouloir supprimer "${itemName}" de cette commande ?\n\nCette action est irréversible.`)) {
+    if (confirm(`Are you sure you want to delete "${itemName}" from this order?\n\nThis action is irreversible.`)) {
       api
         .del(`/restaurant/orders/${orderId}/lines/${lineId}`)
-        .then(() => toast({ title: "✅ Article supprimé" }))
+        .then(() => toast({ title: "✅ Item deleted" }))
         .catch((e: any) =>
-          toast({ title: "❌ Erreur", description: String(e), variant: "destructive" })
+          toast({ title: "❌ Error", description: String(e), variant: "destructive" })
         );
     }
   };
 
   return (
     <div className="border-t space-y-0">
-      {/* ── Hébergement ── */}
+      {/* ── Accommodation ── */}
       <div className="px-4 pt-4 pb-2">
         <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 border-l-2 border-blue-500 pl-2">
-          <Hotel className="h-4 w-4 text-blue-600" /> Charges hébergement
+          <Hotel className="h-4 w-4 text-blue-600" /> Accommodation Charges
         </h4>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/40">
-              <th className="p-2 text-left">Désignation</th>
-              <th className="p-2 text-left">Dépt.</th>
-              <th className="p-2 text-right">P.U.</th>
-              <th className="p-2 text-right">Qté</th>
+              <th className="p-2 text-left">Description</th>
+              <th className="p-2 text-left">Dept.</th>
+              <th className="p-2 text-right">Unit Price</th>
+              <th className="p-2 text-right">Qty</th>
               <th className="p-2 text-right">Total</th>
-            </tr>
+             </tr>
           </thead>
           <tbody>
             <tr className="border-b bg-blue-50/40">
-              <td className="p-2 font-medium">Chambre {res.room?.number} ({res.room?.type})</td>
+              <td className="p-2 font-medium">Room {res.room?.number} ({res.room?.type})</td>
               <td className="p-2">
-                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">HÔTEL</span>
-              </td>
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">HOTEL</span>
+               </td>
               <td className="p-2 text-right">{fmt(res.rate)} Ar</td>
-              <td className="p-2 text-right">{nights} nuit(s)</td>
+              <td className="p-2 text-right">{nights} night(s)</td>
               <td className="p-2 text-right font-semibold">{fmt(res.rate * nights)} Ar</td>
-            </tr>
+             </tr>
             {(f?.charges ?? [])
               .filter((c: any) =>
                 !c.description?.toLowerCase().includes("hébergement") &&
@@ -582,38 +582,38 @@ function FolioExpandedDetail({
                     <span className={`text-xs px-2 py-0.5 rounded-full ${DEPT_COLORS[c.department] ?? "bg-muted text-muted-foreground"}`}>
                       {c.department?.toUpperCase()}
                     </span>
-                  </td>
+                   </td>
                   <td className="p-2 text-right">{fmt(c.unitPrice)} Ar</td>
                   <td className="p-2 text-right">{c.qty}</td>
                   <td className="p-2 text-right font-semibold">{fmt(c.unitPrice * c.qty)} Ar</td>
-                </tr>
+                 </tr>
               ))}
           </tbody>
           <tfoot>
             <tr className="bg-muted/40">
-              <td colSpan={4} className="p-2 text-right font-semibold">Total hébergement</td>
+              <td colSpan={4} className="p-2 text-right font-semibold">Accommodation Total</td>
               <td className="p-2 text-right font-bold">{fmt(f?.total ?? res.rate * nights)} Ar</td>
-            </tr>
+             </tr>
           </tfoot>
         </table>
       </div>
 
-      {/* ── Commandes ── */}
+      {/* ── Orders ── */}
       {folioOrders.length > 0 && (
         <div className="px-4 pb-2">
           <div className="flex items-center justify-between flex-wrap gap-2 mb-2 mt-2">
             <h4 className="text-sm font-semibold flex items-center gap-2 border-l-2 border-orange-500 pl-2">
               <ShoppingBag className="h-4 w-4 text-orange-600" />
-              Commandes
+              Orders
               <span className="font-normal text-muted-foreground text-base">({folioOrders.length})</span>
             </h4>
             <div className="flex gap-2 text-sm flex-wrap">
               <span className="flex items-center gap-1 bg-green-100 text-green-800 px-3 py-1 rounded-full font-medium text-xs">
-                <CheckCircle2 className="h-3.5 w-3.5" />{paidOrders.length} payée(s)
+                <CheckCircle2 className="h-3.5 w-3.5" />{paidOrders.length} paid
               </span>
               <span className="flex items-center gap-1 bg-red-100 text-red-800 px-3 py-1 rounded-full font-medium text-xs">
                 <XCircle className="h-3.5 w-3.5" />
-                {unpaidOrders.length} impayée(s)
+                {unpaidOrders.length} unpaid
                 {unpaidOrdersTotal > 0 && ` · ${fmt(unpaidOrdersTotal)} Ar`}
               </span>
             </div>
@@ -627,14 +627,14 @@ function FolioExpandedDetail({
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
               >
-                {{ all: "Toutes", paid: "✓ Payées", unpaid: "⚠ Impayées" }[tab]}
+                {{ all: "All", paid: "✓ Paid", unpaid: "⚠ Unpaid" }[tab]}
               </button>
             ))}
           </div>
 
           <div className="space-y-2">
             {filteredOrders.length === 0 && (
-              <p className="text-sm text-muted-foreground py-3 text-center">Aucune commande dans ce filtre.</p>
+              <p className="text-sm text-muted-foreground py-3 text-center">No orders in this filter.</p>
             )}
             {filteredOrders.map((o: any) => {
               const expanded = expandedOrders.has(o.id);
@@ -660,7 +660,7 @@ function FolioExpandedDetail({
                       {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm">Commande #{orderNum}</span>
+                          <span className="font-medium text-sm">Order #{orderNum}</span>
                           <span className="text-xs text-muted-foreground">(ID: {o.id})</span>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DEPT_COLORS[o.dept] ?? "bg-gray-100 text-gray-700"}`}>
                             {(o.dept ?? "").toUpperCase()}
@@ -671,25 +671,25 @@ function FolioExpandedDetail({
                             </span>
                           )}
                           <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${o.status === "open" ? "bg-yellow-50 text-yellow-700 border-yellow-200" : o.status === "closed" ? "bg-green-50 text-green-700 border-green-200" : o.status === "cancelled" ? "bg-red-50 text-red-700 border-red-200" : "bg-muted text-muted-foreground"}`}>
-                            {o.status === "open" ? "Active" : o.status === "closed" ? "Clôturée" : o.status === "cancelled" ? "Annulée" : o.status}
+                            {o.status === "open" ? "Active" : o.status === "closed" ? "Closed" : o.status === "cancelled" ? "Cancelled" : o.status}
                           </span>
                           {isPaid
-                            ? <span className="flex items-center gap-1 text-xs text-green-700 font-semibold"><CheckCircle2 className="h-3.5 w-3.5" />Payée</span>
-                            : <span className="flex items-center gap-1 text-xs text-red-700 font-semibold"><XCircle className="h-3.5 w-3.5" />Impayée</span>
+                            ? <span className="flex items-center gap-1 text-xs text-green-700 font-semibold"><CheckCircle2 className="h-3.5 w-3.5" />Paid</span>
+                            : <span className="flex items-center gap-1 text-xs text-red-700 font-semibold"><XCircle className="h-3.5 w-3.5" />Unpaid</span>
                           }
                         </div>
                         <div className="flex items-center gap-3 mt-0.5">
                           <p className="text-xs text-muted-foreground">
                             {new Date(o.openedAt).toLocaleString("fr-FR")}
                             {o.closedAt && ` → ${new Date(o.closedAt).toLocaleString("fr-FR")}`}
-                            {" · "}{totalQty} article(s)
+                            {" · "}{totalQty} item(s)
                           </p>
                           {lines.length > 0 && (
                             <div className="flex items-center gap-1.5">
                               <div className="h-1.5 w-16 bg-muted rounded-full overflow-hidden">
                                 <div className={`h-full rounded-full transition-all ${progress === 100 ? "bg-green-500" : "bg-orange-400"}`} style={{ width: `${progress}%` }} />
                               </div>
-                              <span className="text-xs text-muted-foreground">{delivered}/{lines.length} livrés</span>
+                              <span className="text-xs text-muted-foreground">{delivered}/{lines.length} delivered</span>
                             </div>
                           )}
                         </div>
@@ -698,8 +698,8 @@ function FolioExpandedDetail({
                     <div className="text-right shrink-0 ml-4">
                       {oDiscount > 0 && <div className="text-xs text-muted-foreground line-through">{fmt(oSubtotal)} Ar</div>}
                       <div className="font-semibold text-sm">{fmt(oTotal)} Ar</div>
-                      {!isPaid && oPaid > 0 && <div className="text-xs text-red-600">Reste : {fmt(oBalance)} Ar</div>}
-                      {isPaid && <div className="text-xs text-green-600">Soldé</div>}
+                      {!isPaid && oPaid > 0 && <div className="text-xs text-red-600">Remaining: {fmt(oBalance)} Ar</div>}
+                      {isPaid && <div className="text-xs text-green-600">Paid in full</div>}
                     </div>
                   </button>
 
@@ -708,17 +708,17 @@ function FolioExpandedDetail({
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="bg-muted/40">
-                            <th className="p-2 text-left">Article</th>
-                            <th className="p-2 text-left">Statut cuisine</th>
-                            <th className="p-2 text-right">P.U.</th>
-                            <th className="p-2 text-right">Qté</th>
+                            <th className="p-2 text-left">Item</th>
+                            <th className="p-2 text-left">Kitchen Status</th>
+                            <th className="p-2 text-right">Unit Price</th>
+                            <th className="p-2 text-right">Qty</th>
                             <th className="p-2 text-right">Total</th>
                             <th className="p-2 text-center">Action</th>
                           </tr>
                         </thead>
                         <tbody>
                           {lines.length === 0 ? (
-                            <tr><td colSpan={6} className="p-3 text-center text-muted-foreground italic">Aucun article</td></tr>
+                            <tr><td colSpan={6} className="p-3 text-center text-muted-foreground italic">No items</td></tr>
                           ) : (
                             lines.map((l: any) => (
                               <tr key={l.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
@@ -735,7 +735,7 @@ function FolioExpandedDetail({
                                       <Clock className="h-3 w-3" />{l.itempreparationTime} min
                                     </div>
                                   )}
-                                </td>
+                                 </td>
                                 <td className="p-2">
                                   <select
                                     className={`text-xs rounded border px-1.5 py-0.5 font-medium cursor-pointer focus:outline-none ${FIRE_STYLE[l.fireStatus] ?? "bg-muted"}`}
@@ -746,7 +746,7 @@ function FolioExpandedDetail({
                                       <option key={s} value={s}>{FIRE_ICON[s]} {FIRE_LABEL[s]}</option>
                                     ))}
                                   </select>
-                                </td>
+                                 </td>
                                 <td className="p-2 text-right">{fmt(l.unitPrice)} Ar</td>
                                 <td className="p-2 text-right">{l.qty}</td>
                                 <td className="p-2 text-right font-medium">{fmt(l.unitPrice * l.qty)} Ar</td>
@@ -758,37 +758,37 @@ function FolioExpandedDetail({
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
-                                </td>
+                                 </td>
                               </tr>
                             ))
                           )}
                         </tbody>
                         <tfoot>
                           <tr className="bg-muted/30">
-                            <td colSpan={5} className="p-2 text-right">Sous-total</td>
+                            <td colSpan={5} className="p-2 text-right">Subtotal</td>
                             <td className="p-2 text-right">{fmt(oSubtotal)} Ar</td>
                           </tr>
                           {oDiscount > 0 && (
                             <tr className="bg-amber-50">
                               <td colSpan={5} className="p-2 text-right text-amber-700">
-                                Remise{o.discountReason ? ` (${o.discountReason})` : ""}
-                              </td>
+                                Discount{o.discountReason ? ` (${o.discountReason})` : ""}
+                               </td>
                               <td className="p-2 text-right text-amber-700 font-medium">-{fmt(oDiscount)} Ar</td>
                             </tr>
                           )}
                           <tr className="bg-muted/30 font-semibold">
-                            <td colSpan={5} className="p-2 text-right font-semibold">Total TTC</td>
+                            <td colSpan={5} className="p-2 text-right font-semibold">Total Inc. Tax</td>
                             <td className="p-2 text-right font-bold">{fmt(oTotal)} Ar</td>
                           </tr>
                           {oPaid > 0 && (
                             <tr>
-                              <td colSpan={5} className="p-2 text-right text-green-700">Paiements reçus</td>
+                              <td colSpan={5} className="p-2 text-right text-green-700">Payments received</td>
                               <td className="p-2 text-right text-green-700 font-medium">-{fmt(oPaid)} Ar</td>
                             </tr>
                           )}
                           {!isPaid && (
                             <tr className="bg-red-50">
-                              <td colSpan={5} className="p-2 text-right font-semibold text-red-700">Reste dû</td>
+                              <td colSpan={5} className="p-2 text-right font-semibold text-red-700">Amount Due</td>
                               <td className="p-2 text-right font-bold text-red-700">{fmt(oBalance)} Ar</td>
                             </tr>
                           )}
@@ -803,20 +803,20 @@ function FolioExpandedDetail({
         </div>
       )}
 
-      {/* ── Paiements folio ── */}
+      {/* ── Folio Payments ── */}
       {payments.length > 0 && (
         <div className="px-4 pb-2">
           <h4 className="text-sm font-semibold mb-2 mt-2 flex items-center gap-2 border-l-2 border-green-500 pl-2">
-            Paiements reçus (folio hôtel)
+            Payments received (hotel folio)
           </h4>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
                 <th className="p-2 text-left">Date</th>
-                <th className="p-2 text-left">Moyen</th>
-                <th className="p-2 text-right">Imputé</th>
-                <th className="p-2 text-right">Reçu</th>
-                <th className="p-2 text-right">Monnaie</th>
+                <th className="p-2 text-left">Method</th>
+                <th className="p-2 text-right">Applied</th>
+                <th className="p-2 text-right">Received</th>
+                <th className="p-2 text-right">Change</th>
               </tr>
             </thead>
             <tbody>
@@ -835,13 +835,13 @@ function FolioExpandedDetail({
             </tbody>
             <tfoot>
               <tr className="bg-muted/40">
-                <td colSpan={2} className="p-2 text-right font-semibold">Total paiements folio</td>
+                <td colSpan={2} className="p-2 text-right font-semibold">Total folio payments</td>
                 <td className="p-2 text-right font-bold text-green-600">{fmt(paidFolio)} Ar</td>
                 <td colSpan={2}></td>
               </tr>
               {ordersPaidDirectly > 0 && (
                 <tr className="bg-orange-50">
-                  <td colSpan={2} className="p-2 text-right font-semibold text-orange-700">Paiements directs commandes</td>
+                  <td colSpan={2} className="p-2 text-right font-semibold text-orange-700">Direct order payments</td>
                   <td className="p-2 text-right font-bold text-orange-700">{fmt(ordersPaidDirectly)} Ar</td>
                   <td colSpan={2}></td>
                 </tr>
@@ -851,17 +851,17 @@ function FolioExpandedDetail({
         </div>
       )}
 
-      {/* ── Solde global folio ── */}
+      {/* ── Global folio balance ── */}
       <div className="px-4 pb-4 pt-2">
         <div className={`rounded-lg p-4 flex items-center justify-between ${balance > 0 ? "border border-red-200 bg-red-50" : "border border-green-200 bg-green-50"}`}>
           <div className="flex items-center gap-2">
             {balance > 0 ? <AlertCircle className="h-5 w-5 text-red-600" /> : <CheckCircle2 className="h-5 w-5 text-green-600" />}
             <div>
               <span className={`font-semibold text-base ${balance > 0 ? "text-red-700" : "text-green-700"}`}>
-                {balance > 0 ? "Solde dû" : balance < 0 ? "Avoir client" : "Compte soldé"}
+                {balance > 0 ? "Amount Due" : balance < 0 ? "Guest Credit" : "Balance Paid"}
               </span>
               {unpaidOrdersTotal > 0 && (
-                <p className="text-xs text-red-600 mt-0.5">dont {fmt(unpaidOrdersTotal)} Ar de commandes impayées</p>
+                <p className="text-xs text-red-600 mt-0.5">including {fmt(unpaidOrdersTotal)} Ar of unpaid orders</p>
               )}
             </div>
           </div>
@@ -874,7 +874,7 @@ function FolioExpandedDetail({
   );
 }
 
-// ── CardFeesInfo : composant réutilisable info frais carte ─────────────────────
+// ── CardFeesInfo : reusable component for card fee info ─────────────────────
 
 function CardFeesInfoBanner({ cardAmount }: { cardAmount: number }) {
   if (cardAmount <= 0) return null;
@@ -885,41 +885,41 @@ function CardFeesInfoBanner({ cardAmount }: { cardAmount: number }) {
     <div className="border border-blue-200 bg-blue-50 rounded-lg p-3 space-y-2">
       <div className="flex items-center gap-2 text-blue-800 font-medium text-sm">
         <CreditCard className="h-4 w-4 shrink-0" />
-        Information frais bancaires
+        Bank Fee Information
       </div>
       <div className="grid grid-cols-3 gap-2 text-xs">
         <div className="bg-white rounded border border-blue-100 p-2 text-center">
-          <div className="text-muted-foreground">Consommation</div>
+          <div className="text-muted-foreground">Consumption</div>
           <div className="font-semibold text-foreground mt-0.5">{fmt(cardAmount)} Ar</div>
-          <div className="text-xs text-green-600 mt-0.5">encaissé</div>
+          <div className="text-xs text-green-600 mt-0.5">collected</div>
         </div>
         <div className="bg-white rounded border border-red-100 p-2 text-center">
-          <div className="text-muted-foreground">Frais banque (5%)</div>
+          <div className="text-muted-foreground">Bank Fee (5%)</div>
           <div className="font-semibold text-red-600 mt-0.5">+{fmt(fees)} Ar</div>
-          <div className="text-xs text-muted-foreground mt-0.5">gardés banque</div>
+          <div className="text-xs text-muted-foreground mt-0.5">bank retained</div>
         </div>
         <div className="bg-blue-100 rounded border border-blue-200 p-2 text-center">
-          <div className="text-blue-700">Total prélevé</div>
+          <div className="text-blue-700">Total Debited</div>
           <div className="font-bold text-blue-800 mt-0.5">{fmt(totalDebited)} Ar</div>
-          <div className="text-xs text-blue-600 mt-0.5">sur la carte</div>
+          <div className="text-xs text-blue-600 mt-0.5">from card</div>
         </div>
       </div>
       <p className="text-xs text-muted-foreground italic">
-        L'établissement encaisse uniquement {fmt(cardAmount)} Ar. Les frais de {fmt(fees)} Ar sont retenus directement par votre banque.
+        The establishment only collects {fmt(cardAmount)} Ar. The {fmt(fees)} Ar fees are directly retained by your bank.
       </p>
     </div>
   );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// COMPOSANT PRINCIPAL
+// MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 
 export default function RestaurantPOS() {
   const { hasScope } = useAuth();
   const qc = useQueryClient();
 
-  // ── State UI ──
+  // ── UI State ──
   const [table, setTable] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [addingItem, setAddingItem] = useState<number | null>(null);
@@ -1013,22 +1013,22 @@ export default function RestaurantPOS() {
     enabled: activeTab === "folios",
   });
 
-  // ── Dérivés ───────────────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────────
 
   const checkedIn = useMemo(
     () => (todaysReservations as any[]).filter((r: any) => r.status === "checked_in" && r.folio),
     [todaysReservations]
   );
 
-  // ✅ FIX 1 — getFolioOrders : détection robuste via payments.folioId
-  // Les commandes ne stockent pas folioId directement, elles sont liées
-  // via Payment.folioId. La route GET /orders inclut maintenant payments.
+  // ✅ FIX 1 — getFolioOrders : robust detection via payments.folioId
+  // Orders don't store folioId directly, they are linked
+  // via Payment.folioId. The GET /orders route now includes payments.
   const getFolioOrders = useCallback(
     (folioId: number) =>
       (allOrdersForFolios as any[]).filter((o: any) => {
-        // Cas 1 : champ direct (si ajouté un jour au modèle)
+        // Case 1 : direct field (if added to model in the future)
         if (o.folioId === folioId) return true;
-        // Cas 2 : liaison via paiements (cas principal)
+        // Case 2 : link via payments (main case)
         const payments: any[] = o.payments ?? [];
         return payments.some((p: any) => p.folioId === folioId);
       }),
@@ -1061,7 +1061,7 @@ export default function RestaurantPOS() {
     return Math.max(0, (f.total ?? 0) - folioPaid(f));
   };
 
-  // ✅ FIX 3 — toggleFolio : refetch des commandes à chaque ouverture d'un folio
+  // ✅ FIX 3 — toggleFolio : refetch orders each time a folio is opened
   const toggleFolio = (id: number) => {
     setExpandedFolios(prev => {
       const n = new Set(prev);
@@ -1069,7 +1069,7 @@ export default function RestaurantPOS() {
         n.delete(id);
       } else {
         n.add(id);
-        // Rafraîchit les commandes pour avoir les payments à jour
+        // Refresh orders to have up-to-date payments
         refetchFolioOrders();
       }
       return n;
@@ -1083,7 +1083,7 @@ export default function RestaurantPOS() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["restaurant", "tables"] });
       setNewTableCode("");
-      toast({ title: "Table créée" });
+      toast({ title: "Table created" });
     },
   });
 
@@ -1093,7 +1093,7 @@ export default function RestaurantPOS() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["restaurant", "tables"] });
       setEditingTable(null);
-      toast({ title: "Table modifiée" });
+      toast({ title: "Table modified" });
     },
   });
 
@@ -1101,10 +1101,10 @@ export default function RestaurantPOS() {
     mutationFn: (id: number) => api.del(`/restaurant/tables/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["restaurant", "tables"] });
-      toast({ title: "Table supprimée" });
+      toast({ title: "Table deleted" });
     },
     onError: (e: any) =>
-      toast({ title: "Impossible de supprimer", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
+      toast({ title: "Cannot delete", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
   });
 
   const createOrder = useMutation({
@@ -1122,10 +1122,10 @@ export default function RestaurantPOS() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orders", "restaurant"] });
-      toast({ title: "Article ajouté" });
+      toast({ title: "Item added" });
     },
     onError: (e: any) =>
-      toast({ title: "Erreur ajout", description: e.response?.data?.message ?? String(e), variant: "destructive" }),
+      toast({ title: "Add error", description: e.response?.data?.message ?? String(e), variant: "destructive" }),
   });
 
   const deleteOrderLine = useMutation({
@@ -1137,14 +1137,14 @@ export default function RestaurantPOS() {
       await refetchOrders();
       await refetchFolioOrders();
       if (selectedOrder && selectedOrder.id === orderId) await refreshSelectedOrder(orderId);
-      toast({ title: "✅ Article supprimé" });
+      toast({ title: "✅ Item deleted" });
     },
     onError: (e: any) =>
-      toast({ title: "❌ Erreur suppression", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
+      toast({ title: "❌ Delete error", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
   });
 
   const handleDeleteLine = (orderId: number, lineId: number, itemName: string) => {
-    if (confirm(`Supprimer "${itemName}" de cette commande ? Cette action est irréversible.`))
+    if (confirm(`Delete "${itemName}" from this order? This action is irreversible.`))
       deleteOrderLine.mutate({ orderId, lineId });
   };
 
@@ -1154,11 +1154,11 @@ export default function RestaurantPOS() {
       qc.invalidateQueries({ queryKey: ["orders", "restaurant"] });
       qc.invalidateQueries({ queryKey: ["orders", "restaurant", "all"] });
       await refreshSelectedOrder(id);
-      toast({ title: "Commande clôturée" });
+      toast({ title: "Order closed" });
       setDetailsOpen(false);
     },
     onError: (e: any) =>
-      toast({ title: "Erreur clôture", description: String(e), variant: "destructive" }),
+      toast({ title: "Close error", description: String(e), variant: "destructive" }),
   });
 
   const payOrder = useMutation({
@@ -1173,10 +1173,10 @@ export default function RestaurantPOS() {
     onSuccess: async (data: any, vars) => {
       const change = data?.context?.change ?? 0;
       toast({
-        title: "✅ Paiement enregistré",
+        title: "✅ Payment recorded",
         description: change > 0
-          ? `Monnaie à rendre au client : ${fmt(change)} Ar`
-          : "Paiement enregistré avec succès",
+          ? `Change to return to customer : ${fmt(change)} Ar`
+          : "Payment successfully recorded",
       });
       setPayAmount("");
       setReceivedAmount("");
@@ -1184,7 +1184,7 @@ export default function RestaurantPOS() {
       qc.invalidateQueries({ queryKey: ["orders", "restaurant"] });
     },
     onError: (e: any) =>
-      toast({ title: "Erreur paiement", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
+      toast({ title: "Payment error", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
   });
 
   const applyDiscount = useMutation({
@@ -1193,7 +1193,7 @@ export default function RestaurantPOS() {
         discountAmount: p.discountAmount, discountType: p.discountType, discountReason: p.discountReason,
       }),
     onSuccess: async (_, vars) => {
-      toast({ title: "✅ Remise appliquée" });
+      toast({ title: "✅ Discount applied" });
       setDiscountInput("");
       setDiscountReason("");
       setShowDiscountForm(false);
@@ -1201,26 +1201,26 @@ export default function RestaurantPOS() {
       qc.invalidateQueries({ queryKey: ["orders", "restaurant"] });
     },
     onError: (e: any) =>
-      toast({ title: "Erreur remise", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
+      toast({ title: "Discount error", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
   });
 
   const removeDiscount = useMutation({
     mutationFn: (orderId: number) =>
       api.patch(`/cash/orders/${orderId}/discount`, { discountAmount: 0, discountType: "fixed", discountReason: "" }),
     onSuccess: async (_, orderId) => {
-      toast({ title: "Remise supprimée" });
+      toast({ title: "Discount removed" });
       await refreshSelectedOrder(orderId);
       qc.invalidateQueries({ queryKey: ["orders", "restaurant"] });
     },
     onError: (e: any) =>
-      toast({ title: "Erreur suppression remise", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
+      toast({ title: "Error removing discount", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
   });
 
   const chargeToFolio = useMutation({
     mutationFn: (p: { orderId: number; folioId: number; close?: boolean }) =>
       api.post(`/restaurant/orders/${p.orderId}/charge-to-folio`, { folioId: p.folioId, closeOrder: !!p.close }),
     onSuccess: () => {
-      toast({ title: "Imputé au folio chambre" });
+      toast({ title: "Charged to room folio" });
       qc.invalidateQueries({ queryKey: ["orders", "restaurant"] });
       qc.invalidateQueries({ queryKey: ["orders", "restaurant", "all"] });
       qc.invalidateQueries({ queryKey: ["hotel", "reservations", today] });
@@ -1228,7 +1228,7 @@ export default function RestaurantPOS() {
       setDetailsOpen(false);
     },
     onError: (e: any) =>
-      toast({ title: "Erreur imputation", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
+      toast({ title: "Charge error", description: e.response?.data?.error ?? String(e), variant: "destructive" }),
   });
 
   const updateLineStatus = useMutation({
@@ -1239,7 +1239,7 @@ export default function RestaurantPOS() {
       qc.invalidateQueries({ queryKey: ["orders", "restaurant", "all"] });
     },
     onError: (e: any) =>
-      toast({ title: "Erreur mise à jour statut", description: String(e), variant: "destructive" }),
+      toast({ title: "Status update error", description: String(e), variant: "destructive" }),
   });
 
   const handleUpdateLineStatus = useCallback(
@@ -1248,7 +1248,7 @@ export default function RestaurantPOS() {
     }, []
   );
 
-  // ── Helpers UI ────────────────────────────────────────────────────────────
+  // ── UI Helpers ────────────────────────────────────────────────────────────
 
   const refreshSelectedOrder = async (orderId: number) => {
     setLoadingOrder(true);
@@ -1258,7 +1258,7 @@ export default function RestaurantPOS() {
       if (!order.invoiceNumber) order.invoiceNumber = generateInvoiceNumber(order.id);
       setSelectedOrder(order);
     } catch {
-      toast({ title: "Impossible de charger la commande", variant: "destructive" });
+      toast({ title: "Unable to load order", variant: "destructive" });
     } finally {
       setLoadingOrder(false);
     }
@@ -1320,7 +1320,7 @@ export default function RestaurantPOS() {
       closed: "bg-green-50 text-green-700 border-green-200",
       cancelled: "bg-red-50 text-red-700 border-red-200",
     };
-    const labels: Record<string, string> = { open: "Active", closed: "Clôturée", cancelled: "Annulée" };
+    const labels: Record<string, string> = { open: "Active", closed: "Closed", cancelled: "Cancelled" };
     return <Badge variant="outline" className={styles[s] ?? styles.open}>{labels[s] ?? s}</Badge>;
   };
 
@@ -1334,12 +1334,12 @@ export default function RestaurantPOS() {
     const amt = Number(payAmount);
     const rcv = Number(receivedAmount);
     if (!amt || amt <= 0) {
-      toast({ title: "Montant à imputer invalide", variant: "destructive" });
+      toast({ title: "Invalid payment amount", variant: "destructive" });
       return;
     }
     if (receivedAmount !== "" && rcv < amt) {
       toast({
-        title: `La somme reçue (${fmt(rcv)} Ar) doit être ≥ au montant imputé (${fmt(amt)} Ar)`,
+        title: `Amount received (${fmt(rcv)} Ar) must be ≥ payment amount (${fmt(amt)} Ar)`,
         variant: "destructive",
       });
       return;
@@ -1354,7 +1354,7 @@ export default function RestaurantPOS() {
 
   const handleApplyDiscount = () => {
     if (discountInput === "" || Number(discountInput) < 0) {
-      toast({ title: "Saisissez un montant de remise valide", variant: "destructive" });
+      toast({ title: "Enter a valid discount amount", variant: "destructive" });
       return;
     }
     applyDiscount.mutate({
@@ -1365,7 +1365,7 @@ export default function RestaurantPOS() {
     });
   };
 
-  // ── RENDU ─────────────────────────────────────────────────────────────────
+  // ── RENDER ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex h-screen bg-background">
@@ -1374,11 +1374,11 @@ export default function RestaurantPOS() {
         <Header />
         <main className="flex-1 overflow-auto p-6 space-y-6">
 
-          {/* ── Titre + onglets ── */}
+          {/* ── Title + tabs ── */}
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h1 className="text-3xl font-bold">Prise de commande</h1>
-              <p className="text-muted-foreground">Tables → Plats → Encaissement</p>
+              <h1 className="text-3xl font-bold">Order Taking</h1>
+              <p className="text-muted-foreground">Tables → Dishes → Payment</p>
             </div>
             <div className="flex gap-1 bg-muted rounded-lg p-1">
               {(["pos", "folios"] as const).map(t => (
@@ -1391,7 +1391,7 @@ export default function RestaurantPOS() {
                     }`}
                 >
                   <Utensils className="inline h-4 w-4 mr-1.5 -mt-0.5" />
-                  {t === "pos" ? "POS Restaurant" : "Folios des chambres"}
+                  {t === "pos" ? "POS Restaurant" : "Room Folios"}
                 </button>
               ))}
             </div>
@@ -1415,7 +1415,7 @@ export default function RestaurantPOS() {
                     />
                     <Button onClick={() => newTableCode.trim() && createTable.mutate(newTableCode.trim())} disabled={createTable.isPending}>
                       <PlusSquare className="w-4 h-4 mr-1" />
-                      {createTable.isPending ? "…" : "Créer"}
+                      {createTable.isPending ? "…" : "Create"}
                     </Button>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1438,10 +1438,10 @@ export default function RestaurantPOS() {
                           <Button
                             size="icon" variant="ghost"
                             disabled={removeTable.isPending || tOrders.length > 0}
-                            title={tOrders.length > 0 ? "Commandes actives" : "Supprimer"}
+                            title={tOrders.length > 0 ? "Active orders" : "Delete"}
                             onClick={() => {
-                              if (tOrders.length > 0) { toast({ title: "Clôturez d'abord les commandes", variant: "destructive" }); return; }
-                              if (confirm(`Supprimer la table ${code} ?`)) removeTable.mutate(t.id);
+                              if (tOrders.length > 0) { toast({ title: "Close orders first", variant: "destructive" }); return; }
+                              if (confirm(`Delete table ${code} ?`)) removeTable.mutate(t.id);
                             }}
                           >
                             {removeTable.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : tOrders.length > 0 ? <Clock className="w-4 h-4 text-orange-500" /> : <Trash2 className="w-4 h-4 text-red-600" />}
@@ -1458,9 +1458,9 @@ export default function RestaurantPOS() {
                         onChange={e => setEditingTable({ ...editingTable, code: e.target.value })}
                       />
                       <Button onClick={() => editTableMut.mutate({ id: editingTable.id, code: editingTable.code })} disabled={editTableMut.isPending}>
-                        {editTableMut.isPending ? "…" : "Enregistrer"}
+                        {editTableMut.isPending ? "…" : "Save"}
                       </Button>
-                      <Button variant="outline" onClick={() => setEditingTable(null)}>Annuler</Button>
+                      <Button variant="outline" onClick={() => setEditingTable(null)}>Cancel</Button>
                     </div>
                   )}
                 </CardContent>
@@ -1471,7 +1471,7 @@ export default function RestaurantPOS() {
                 <CardHeader><CardTitle>Menu</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                   <div className="relative">
-                    <Input placeholder="Rechercher…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
+                    <Input placeholder="Search…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   </div>
                   {!selectedCategory ? (
@@ -1482,7 +1482,7 @@ export default function RestaurantPOS() {
                           <Button key={cat.key} variant="outline" className="h-auto p-4 flex flex-col items-center gap-1 w-full" onClick={() => setSelectedCategory(cat.key)}>
                             <Utensils className="h-5 w-5" />
                             <span className="font-medium text-sm text-center">{cat.label}</span>
-                            <span className="text-xs text-muted-foreground">{count} plat{count > 1 ? "s" : ""}</span>
+                            <span className="text-xs text-muted-foreground">{count} dish{count > 1 ? "es" : ""}</span>
                           </Button>
                         );
                       })}
@@ -1490,14 +1490,14 @@ export default function RestaurantPOS() {
                   ) : (
                     <>
                       <Button variant="ghost" size="sm" className="flex items-center gap-2 text-muted-foreground hover:text-foreground" onClick={() => setSelectedCategory(null)}>
-                        <ChevronLeft className="h-4 w-4" />Retour
+                        <ChevronLeft className="h-4 w-4" />Back
                       </Button>
                       <p className="text-sm font-medium">{CATEGORIES.find(c => c.key === selectedCategory)?.label}</p>
-                      {dishesLoading && <div className="text-center text-sm text-muted-foreground py-4">Chargement…</div>}
+                      {dishesLoading && <div className="text-center text-sm text-muted-foreground py-4">Loading…</div>}
                       <div className="grid grid-cols-2 gap-2">
                         {filteredDishes.filter((d: any) => d.category === selectedCategory).length === 0 && !dishesLoading ? (
                           <div className="col-span-2 text-center text-sm text-muted-foreground py-4">
-                            {searchTerm ? "Aucun plat trouvé" : "Aucun plat dans cette catégorie"}
+                            {searchTerm ? "No dishes found" : "No dishes in this category"}
                           </div>
                         ) : (
                           filteredDishes.filter((d: any) => d.category === selectedCategory).map((dish: any) => (
@@ -1511,7 +1511,7 @@ export default function RestaurantPOS() {
                                 <Utensils className="h-5 w-5 mb-1" />
                                 <span className="font-medium text-sm text-center w-full truncate leading-tight line-clamp-2 break-words">{dish.name}</span>
                                 <span className="text-xs text-muted-foreground">{fmt(dish.price)} Ar</span>
-                                {addingItem === dish.id && <div className="text-xs text-blue-600 mt-1">Ajout…</div>}
+                                {addingItem === dish.id && <div className="text-xs text-blue-600 mt-1">Adding…</div>}
                               </Button>
                               {hasScope("orders:write") && table && !dishesError && (
                                 <Button
@@ -1519,7 +1519,7 @@ export default function RestaurantPOS() {
                                   className="absolute -top-2 -right-2 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                                   onClick={() => openCommentDialog({ id: dish.id, name: dish.name, price: dish.price })}
                                   disabled={addingItem === dish.id}
-                                  title="Instruction spéciale"
+                                  title="Special instruction"
                                 >
                                   <MessageSquare className="h-4 w-4" />
                                 </Button>
@@ -1528,7 +1528,7 @@ export default function RestaurantPOS() {
                                 size="icon" variant="secondary"
                                 className="absolute -bottom-2 -right-2 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                                 onClick={() => setDetailDialog(dish)}
-                                title="Voir les détails"
+                                title="View details"
                               >
                                 <Info className="h-4 w-4" />
                               </Button>
@@ -1541,24 +1541,24 @@ export default function RestaurantPOS() {
                 </CardContent>
               </Card>
 
-              {/* ── Commandes ── */}
+              {/* ── Orders ── */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="flex items-center gap-2 text-lg">
-                    <ClipboardList className="h-5 w-5 text-primary" /> Commandes
+                    <ClipboardList className="h-5 w-5 text-primary" /> Orders
                   </CardTitle>
-                  <Button variant="ghost" size="icon" onClick={() => { refetchOrders(); toast({ title: "Rafraîchissement…" }); }}>
+                  <Button variant="ghost" size="icon" onClick={() => { refetchOrders(); toast({ title: "Refreshing…" }); }}>
                     <RefreshCw className="h-4 w-4" />
                   </Button>
                 </CardHeader>
                 <CardContent>
                   {!table ? (
-                    <div className="text-sm text-muted-foreground text-center py-6">Sélectionnez une table</div>
+                    <div className="text-sm text-muted-foreground text-center py-6">Select a table</div>
                   ) : (
                     <div className="space-y-4">
                       <p className="text-sm text-muted-foreground">Table <span className="font-semibold text-foreground">{table}</span></p>
                       {tableOrders.length === 0 ? (
-                        <div className="text-sm text-muted-foreground p-6 text-center border rounded-lg">Aucune commande active</div>
+                        <div className="text-sm text-muted-foreground p-6 text-center border rounded-lg">No active orders</div>
                       ) : (
                         tableOrders.map((order: any) => {
                           const orderNum = order.orderNumber || formatOrderNumber(order.id, order.createdAt);
@@ -1578,12 +1578,12 @@ export default function RestaurantPOS() {
                                 {statusBadge(order.status)}
                               </div>
                               <div className="flex items-center justify-between bg-muted/20 rounded px-3 py-1.5 text-xs">
-                                <span className="text-muted-foreground">Facture N°</span>
+                                <span className="text-muted-foreground">Invoice No.</span>
                                 <span className="font-mono font-medium">{invoiceNum}</span>
                               </div>
                               <div className="divide-y">
                                 {(order.lines ?? []).length === 0 ? (
-                                  <div className="text-xs text-muted-foreground italic py-2">Aucun article</div>
+                                  <div className="text-xs text-muted-foreground italic py-2">No items</div>
                                 ) : (
                                   (order.lines ?? [])
                                     .sort((a, b) => getIndex(a.item?.category) - getIndex(b.item?.category))
@@ -1621,22 +1621,22 @@ export default function RestaurantPOS() {
                                   <div className="text-xs text-muted-foreground">⏱ {getPrepTime(order.lines ?? [])} min</div>
                                 </div>
                                 <div className="flex gap-2 flex-wrap">
-                                  <Button size="sm" variant="ghost" title="Ticket 80mm" onClick={() => print80mm(table!, order)}>
+                                  <Button size="sm" variant="ghost" title="80mm ticket" onClick={() => print80mm(table!, order)}>
                                     <Printer className="h-4 w-4" />
                                   </Button>
                                   {order.status === "open" && (
                                     <Button size="sm" disabled={!allDelivered(order.lines ?? [])} onClick={() => closeOrder.mutate(order.id)}>
-                                      {closeOrder.isPending ? "…" : "Clôturer"}
+                                      {closeOrder.isPending ? "…" : "Close"}
                                     </Button>
                                   )}
                                   <Button size="sm" variant="outline" onClick={() => openDetails(order)}>
-                                    Détails / Payer
+                                    Details / Pay
                                   </Button>
                                 </div>
                               </div>
                               {!allDelivered(order.lines ?? []) && (order.lines ?? []).length > 0 && (
                                 <div className="text-xs text-orange-600 bg-orange-50 rounded p-2">
-                                  Tous les plats ne sont pas encore livrés
+                                  Not all dishes have been delivered yet
                                 </div>
                               )}
                             </div>
@@ -1656,12 +1656,12 @@ export default function RestaurantPOS() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-semibold flex items-center gap-2">
-                    <Hotel className="h-5 w-5" /> Folios des chambres
+                    <Hotel className="h-5 w-5" /> Room Folios
                   </h2>
-                  <p className="text-sm text-muted-foreground">Clients checked_in · hébergement + commandes + statuts cuisine</p>
+                  <p className="text-sm text-muted-foreground">Checked-in guests · accommodation + orders + kitchen statuses</p>
                 </div>
                 <Button variant="outline" onClick={() => { refetchReservations(); refetchFolioOrders(); }}>
-                  <RefreshCw className="h-4 w-4 mr-2" /> Actualiser
+                  <RefreshCw className="h-4 w-4 mr-2" /> Refresh
                 </Button>
               </div>
 
@@ -1672,10 +1672,10 @@ export default function RestaurantPOS() {
                 return (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
-                      { label: "Clients en chambre", value: checkedIn.length, color: "" },
-                      { label: "Folios avec solde dû", value: unpaid, color: unpaid > 0 ? "text-red-600" : "text-green-600" },
-                      { label: "Total encaissé", value: fmt(totalPaid) + " Ar", color: "text-green-600" },
-                      { label: "Total dû", value: fmt(totalDue) + " Ar", color: totalDue > 0 ? "text-red-600" : "text-green-600" },
+                      { label: "Guests in room", value: checkedIn.length, color: "" },
+                      { label: "Folios with balance due", value: unpaid, color: unpaid > 0 ? "text-red-600" : "text-green-600" },
+                      { label: "Total collected", value: fmt(totalPaid) + " Ar", color: "text-green-600" },
+                      { label: "Total due", value: fmt(totalDue) + " Ar", color: totalDue > 0 ? "text-red-600" : "text-green-600" },
                     ].map(k => (
                       <Card key={k.label}>
                         <CardContent className="pt-4 pb-3">
@@ -1689,7 +1689,7 @@ export default function RestaurantPOS() {
               })()}
 
               {checkedIn.length === 0 ? (
-                <Card><CardContent className="py-12 text-center text-muted-foreground">Aucun client en chambre aujourd'hui</CardContent></Card>
+                <Card><CardContent className="py-12 text-center text-muted-foreground">No checked-in guests today</CardContent></Card>
               ) : (
                 checkedIn.map((res: any) => {
                   const f = res.folio;
@@ -1707,11 +1707,11 @@ export default function RestaurantPOS() {
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-semibold text-base">{res.guest?.fullName}</span>
-                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Ch. {res.room?.number}</span>
+                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Rm. {res.room?.number}</span>
                               <span className="text-xs text-muted-foreground">{res.room?.type}</span>
                               {fOrders.length > 0 && (
                                 <span className="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                  <ShoppingBag className="h-3 w-3" />{fOrders.length} commande(s)
+                                  <ShoppingBag className="h-3 w-3" />{fOrders.length} order(s)
                                 </span>
                               )}
                             </div>
@@ -1722,15 +1722,15 @@ export default function RestaurantPOS() {
                         </div>
                         <div className="flex gap-3 shrink-0 text-sm">
                           <div className="text-right">
-                            <div className="text-xs text-muted-foreground">Héberg.</div>
+                            <div className="text-xs text-muted-foreground">Accomm.</div>
                             <div className="font-semibold">{fmt(f.total ?? 0)} Ar</div>
                           </div>
                           <div className="text-right">
-                            <div className="text-xs text-green-600">Payé</div>
+                            <div className="text-xs text-green-600">Paid</div>
                             <div className="font-semibold text-green-600">{fmt(folioPaid(f))} Ar</div>
                           </div>
                           <div className="text-right">
-                            <div className={`text-xs ${bal > 0 ? "text-red-600" : "text-green-600"}`}>{bal > 0 ? "Dû" : "Soldé"}</div>
+                            <div className={`text-xs ${bal > 0 ? "text-red-600" : "text-green-600"}`}>{bal > 0 ? "Due" : "Paid"}</div>
                             <div className={`font-bold ${bal > 0 ? "text-red-600" : "text-green-600"}`}>{fmt(bal)} Ar</div>
                           </div>
                         </div>
@@ -1748,35 +1748,35 @@ export default function RestaurantPOS() {
         </main>
       </div>
 
-      {/* ═══════════════════════════════════════ DIALOG COMMENTAIRE ══════════ */}
+      {/* ═══════════════════════════════════════ DIALOG COMMENT ══════════ */}
       <Dialog open={!!commentDialog} onOpenChange={open => !open && setCommentDialog(null)}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Instruction spéciale</DialogTitle>
+            <DialogTitle>Special instruction</DialogTitle>
             <DialogDescription>{commentDialog?.dishName} — {commentDialog && fmt(commentDialog.dishPrice)} Ar</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-3">
             <textarea
               id="comment-input"
               className="w-full min-h-[90px] px-3 py-2 rounded-md border bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder="Ex: sans oignons, bien cuit, sauce à part…"
+              placeholder="Ex: no onions, well done, sauce on the side…"
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">Visible sur le ticket cuisine.</p>
+            <p className="text-xs text-muted-foreground">Visible on the kitchen ticket.</p>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setCommentDialog(null)}>Annuler</Button>
+            <Button variant="outline" onClick={() => setCommentDialog(null)}>Cancel</Button>
             <Button
               onClick={() => addItemWithComment((document.getElementById("comment-input") as HTMLTextAreaElement)?.value ?? "")}
               disabled={addingItem === commentDialog?.dishId}
             >
-              {addingItem === commentDialog?.dishId ? "Ajout…" : "Ajouter"}
+              {addingItem === commentDialog?.dishId ? "Adding…" : "Add"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* ═══════════════════════════════════════ DIALOG DÉTAIL PLAT ══════════ */}
+      {/* ═══════════════════════════════════════ DIALOG DISH DETAILS ══════════ */}
       <Dialog open={!!detailDialog} onOpenChange={open => !open && setDetailDialog(null)}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
@@ -1797,18 +1797,18 @@ export default function RestaurantPOS() {
               <div className="flex flex-col items-center justify-center rounded-lg border p-3 gap-1">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">{detailDialog?.preparationTime} min</span>
-                <span className="text-xs text-muted-foreground">Préparation</span>
+                <span className="text-xs text-muted-foreground">Preparation</span>
               </div>
               <div className="flex flex-col items-center justify-center rounded-lg border p-3 gap-1">
                 <span className="text-sm font-medium capitalize">
-                  {detailDialog?.difficulty === "easy" ? "Facile" : detailDialog?.difficulty === "medium" ? "Moyen" : detailDialog?.difficulty === "hard" ? "Difficile" : detailDialog?.difficulty}
+                  {detailDialog?.difficulty === "easy" ? "Easy" : detailDialog?.difficulty === "medium" ? "Medium" : detailDialog?.difficulty === "hard" ? "Hard" : detailDialog?.difficulty}
                 </span>
-                <span className="text-xs text-muted-foreground">Difficulté</span>
+                <span className="text-xs text-muted-foreground">Difficulty</span>
               </div>
             </div>
             {detailDialog?.ingredients && (
               <div>
-                <p className="text-sm font-medium mb-2">Ingrédients</p>
+                <p className="text-sm font-medium mb-2">Ingredients</p>
                 <div className="flex flex-wrap gap-2">
                   {(Array.isArray(detailDialog.ingredients) ? detailDialog.ingredients : Object.values(detailDialog.ingredients)).map((ing: any, i: number) => (
                     <Badge key={i} variant="outline" className="text-xs flex items-center gap-1">
@@ -1821,32 +1821,32 @@ export default function RestaurantPOS() {
             )}
             <div className="flex items-center gap-2 text-sm">
               <span className={`h-2 w-2 rounded-full ${detailDialog?.isActive ? "bg-green-500" : "bg-red-400"}`} />
-              <span className="text-muted-foreground">{detailDialog?.isActive ? "Disponible" : "Indisponible"}</span>
+              <span className="text-muted-foreground">{detailDialog?.isActive ? "Available" : "Unavailable"}</span>
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setDetailDialog(null)}>Fermer</Button>
+            <Button variant="outline" onClick={() => setDetailDialog(null)}>Close</Button>
             {hasScope("orders:write") && table && !dishesError && (
               <Button
                 onClick={() => { addItem({ id: detailDialog.id, name: detailDialog.name, price: detailDialog.price }); setDetailDialog(null); }}
                 disabled={addingItem === detailDialog?.id}
               >
-                {addingItem === detailDialog?.id ? "Ajout…" : "Ajouter à la commande"}
+                {addingItem === detailDialog?.id ? "Adding…" : "Add to order"}
               </Button>
             )}
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* ═══════════════════════════════════════ DIALOG DÉTAILS / PAIEMENT / REMISE ═ */}
+      {/* ═══════════════════════════════════════ DIALOG DETAILS / PAYMENT / DISCOUNT ═ */}
       <Dialog open={detailsOpen} onOpenChange={open => { if (!open) { setDetailsOpen(false); setSelectedOrder(null); } }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Commande {selectedOrder?.orderNumber || `#${selectedOrder?.id}`}</DialogTitle>
+            <DialogTitle>Order {selectedOrder?.orderNumber || `#${selectedOrder?.id}`}</DialogTitle>
             <DialogDescription>Table {selectedOrder?.table?.code ?? "—"} · {selectedOrder?.status}</DialogDescription>
           </DialogHeader>
 
-          {loadingOrder && <div className="py-8 text-center text-muted-foreground text-sm">Chargement…</div>}
+          {loadingOrder && <div className="py-8 text-center text-muted-foreground text-sm">Loading…</div>}
 
           {selectedOrder && !loadingOrder && (() => {
             const sub = orderSubtotal(selectedOrder);
@@ -1860,29 +1860,29 @@ export default function RestaurantPOS() {
             return (
               <div className="space-y-4">
 
-                {/* N° bons */}
+                {/* Order numbers */}
                 <div className="bg-muted/20 rounded-lg p-3 grid grid-cols-2 gap-2 text-sm">
                   <div>
-                    <span className="text-xs text-muted-foreground">Bon de commande N°</span>
+                    <span className="text-xs text-muted-foreground">Order No.</span>
                     <p className="font-mono font-medium text-sm">{orderNum}</p>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground">Facture N°</span>
+                    <span className="text-xs text-muted-foreground">Invoice No.</span>
                     <p className="font-mono font-medium text-sm">{invoiceNum}</p>
                   </div>
                 </div>
 
-                {/* Articles */}
+                {/* Items */}
                 <div className="border rounded overflow-hidden">
                   <div className="grid grid-cols-5 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
-                    <div className="col-span-2">Article</div>
-                    <div className="text-left">Statut</div>
-                    <div className="text-right">Qté</div>
-                    <div className="text-right">S-total</div>
+                    <div className="col-span-2">Item</div>
+                    <div className="text-left">Status</div>
+                    <div className="text-right">Qty</div>
+                    <div className="text-right">Subtotal</div>
                   </div>
                   <div className="divide-y max-h-[260px] overflow-y-auto">
                     {(selectedOrder.lines ?? []).length === 0 ? (
-                      <div className="px-3 py-4 text-center text-muted-foreground text-sm">Aucun article</div>
+                      <div className="px-3 py-4 text-center text-muted-foreground text-sm">No items</div>
                     ) : (
                       (selectedOrder.lines ?? []).map((l: any) => (
                         <div key={l.id} className="px-3 py-2 text-sm hover:bg-muted/20 transition-colors">
@@ -1906,7 +1906,7 @@ export default function RestaurantPOS() {
                               className="h-6 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => handleDeleteLine(selectedOrder.id, l.id, l.itemName)}
                             >
-                              Annuler
+                              Cancel
                             </Button>
                           </div>
                         </div>
@@ -1915,17 +1915,17 @@ export default function RestaurantPOS() {
                   </div>
                 </div>
 
-                {/* ── Résumé montants ── */}
+                {/* ── Amount summary ── */}
                 <div className="bg-muted/10 rounded-lg border p-3 space-y-1.5 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Sous-total</span>
+                    <span className="text-muted-foreground">Subtotal</span>
                     <span className="font-mono">{fmt(sub)} Ar</span>
                   </div>
                   {disc > 0 && (
                     <div className="flex justify-between text-amber-700">
                       <span className="flex items-center gap-1.5">
                         <Tag className="h-3.5 w-3.5" />
-                        Remise
+                        Discount
                         {selectedOrder.discountReason && <span className="text-xs text-amber-600 italic">({selectedOrder.discountReason})</span>}
                         {selectedOrder.discountType === "percent" && sub > 0 && (
                           <span className="text-xs bg-amber-100 px-1.5 rounded-full">{Math.round((disc / sub) * 100)}%</span>
@@ -1935,25 +1935,25 @@ export default function RestaurantPOS() {
                     </div>
                   )}
                   <div className="flex justify-between font-semibold border-t pt-1.5">
-                    <span>Total TTC</span>
+                    <span>Total Inc. Tax</span>
                     <span className="font-mono">{fmt(tot)} Ar</span>
                   </div>
                   <div className="flex justify-between text-green-600">
-                    <span>Déjà encaissé</span>
+                    <span>Already collected</span>
                     <span className="font-mono">-{fmt(paid)} Ar</span>
                   </div>
                   <div className={`flex justify-between font-bold text-base border-t pt-1.5 ${bal > 0 ? "text-red-600" : "text-green-600"}`}>
-                    <span>{bal > 0 ? "Reste dû" : "Soldé ✓"}</span>
+                    <span>{bal > 0 ? "Amount Due" : "Paid in full ✓"}</span>
                     <span className="font-mono">{fmt(bal)} Ar</span>
                   </div>
                 </div>
 
-                {/* ── INFO FRAIS CARTE sur paiements déjà effectués ── */}
+                {/* ── CARD FEE INFO on already made payments ── */}
                 {currentCardFees.cardAmount > 0 && (
                   <CardFeesInfoBanner cardAmount={currentCardFees.cardAmount} />
                 )}
 
-                {/* ── REMISE ── */}
+                {/* ── DISCOUNT ── */}
                 {selectedOrder.status === "open" && (
                   <div className="border border-amber-200 rounded-lg overflow-hidden">
                     <button
@@ -1963,8 +1963,8 @@ export default function RestaurantPOS() {
                       <span className="flex items-center gap-2">
                         <Tag className="h-4 w-4" />
                         {disc > 0 ? (
-                          <>Remise appliquée :&nbsp;<span className="font-bold">-{fmt(disc)} Ar</span>{selectedOrder.discountReason && <span className="font-normal text-amber-600">({selectedOrder.discountReason})</span>}</>
-                        ) : "Appliquer une remise"}
+                          <>Discount applied:&nbsp;<span className="font-bold">-{fmt(disc)} Ar</span>{selectedOrder.discountReason && <span className="font-normal text-amber-600">({selectedOrder.discountReason})</span>}</>
+                        ) : "Apply a discount"}
                       </span>
                       <div className="flex items-center gap-2">
                         {disc > 0 && (
@@ -1973,7 +1973,7 @@ export default function RestaurantPOS() {
                             onClick={e => { e.stopPropagation(); removeDiscount.mutate(selectedOrder.id); }}
                             disabled={removeDiscount.isPending}
                           >
-                            <X className="h-3 w-3" />{removeDiscount.isPending ? "…" : "Supprimer"}
+                            <X className="h-3 w-3" />{removeDiscount.isPending ? "…" : "Remove"}
                           </button>
                         )}
                         <ChevronDown className={`h-4 w-4 transition-transform ${showDiscountForm ? "rotate-180" : ""}`} />
@@ -1984,13 +1984,13 @@ export default function RestaurantPOS() {
                       <div className="p-3 bg-amber-50/50 space-y-3 border-t border-amber-200">
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-xs text-muted-foreground mb-1 block">Type de remise</label>
+                            <label className="text-xs text-muted-foreground mb-1 block">Discount type</label>
                             <div className="flex rounded-md overflow-hidden border">
                               <button
                                 className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium transition-colors ${discountType === "fixed" ? "bg-amber-600 text-white" : "bg-background text-muted-foreground hover:bg-muted"}`}
                                 onClick={() => { setDiscountType("fixed"); setDiscountInput(""); }}
                               >
-                                <Tag className="h-3 w-3" /> Montant
+                                <Tag className="h-3 w-3" /> Amount
                               </button>
                               <button
                                 className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium transition-colors border-l ${discountType === "percent" ? "bg-amber-600 text-white" : "bg-background text-muted-foreground hover:bg-muted"}`}
@@ -2002,7 +2002,7 @@ export default function RestaurantPOS() {
                           </div>
                           <div>
                             <label className="text-xs text-muted-foreground mb-1 block">
-                              {discountType === "percent" ? "Pourcentage (0–100)" : "Montant (Ar)"}
+                              {discountType === "percent" ? "Percentage (0–100)" : "Amount (Ar)"}
                             </label>
                             <Input
                               type="number" min={0} max={discountType === "percent" ? 100 : sub}
@@ -2015,23 +2015,23 @@ export default function RestaurantPOS() {
                           </div>
                         </div>
                         <div>
-                          <label className="text-xs text-muted-foreground mb-1 block">Motif (facultatif)</label>
-                          <Input className="h-8 text-sm" placeholder="Ex: fidélité client, promotion du jour…" value={discountReason} onChange={e => setDiscountReason(e.target.value)} />
+                          <label className="text-xs text-muted-foreground mb-1 block">Reason (optional)</label>
+                          <Input className="h-8 text-sm" placeholder="Ex: loyalty customer, daily promotion…" value={discountReason} onChange={e => setDiscountReason(e.target.value)} />
                         </div>
                         {discountInput !== "" && discountInput > 0 && (
                           <div className="bg-amber-100 border border-amber-300 rounded p-2.5 text-xs text-amber-800 space-y-0.5">
                             {discountType === "percent" && (
                               <div className="flex justify-between">
-                                <span>Remise ({discountInput}%)</span>
+                                <span>Discount ({discountInput}%)</span>
                                 <span className="font-semibold">-{fmt(discountPreviewAr)} Ar</span>
                               </div>
                             )}
                             <div className="flex justify-between font-semibold">
-                              <span>Nouveau total TTC</span>
+                              <span>New total inc. tax</span>
                               <span>{fmt(Math.max(0, sub - discountPreviewAr))} Ar</span>
                             </div>
                             {discountPreviewAr > sub && (
-                              <div className="text-red-700 font-medium">⚠ La remise dépasse le sous-total</div>
+                              <div className="text-red-700 font-medium">⚠ Discount exceeds subtotal</div>
                             )}
                           </div>
                         )}
@@ -2041,8 +2041,8 @@ export default function RestaurantPOS() {
                           disabled={applyDiscount.isPending || discountInput === "" || Number(discountInput) <= 0 || discountPreviewAr > sub}
                         >
                           {applyDiscount.isPending
-                            ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Application…</>
-                            : <><Tag className="h-4 w-4 mr-2" />Appliquer{" "}{discountInput !== "" && discountPreviewAr > 0 ? `(-${fmt(discountPreviewAr)} Ar)` : ""}</>
+                            ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Applying…</>
+                            : <><Tag className="h-4 w-4 mr-2" />Apply{" "}{discountInput !== "" && discountPreviewAr > 0 ? `(-${fmt(discountPreviewAr)} Ar)` : ""}</>
                           }
                         </Button>
                       </div>
@@ -2050,10 +2050,10 @@ export default function RestaurantPOS() {
                   </div>
                 )}
 
-                {/* ── Paiements enregistrés ── */}
+                {/* ── Recorded payments ── */}
                 {(selectedOrder.payments ?? []).length > 0 && (
                   <div className="space-y-1">
-                    <div className="text-xs font-medium text-muted-foreground">Paiements enregistrés</div>
+                    <div className="text-xs font-medium text-muted-foreground">Recorded payments</div>
                     <div className="max-h-[150px] overflow-y-auto space-y-1">
                       {(selectedOrder.payments as any[]).map((p: any) => {
                         const change = p.receivedAmount ? Math.max(0, p.receivedAmount - p.amount) : 0;
@@ -2071,23 +2071,23 @@ export default function RestaurantPOS() {
                             {p.method === "card" && (
                               <div className="mt-1 pt-1 border-t border-blue-100 space-y-0.5">
                                 <div className="flex justify-between text-blue-600">
-                                  <span>Encaissé par l'établissement</span>
+                                  <span>Collected by establishment</span>
                                   <span className="font-medium">{fmt(p.amount)} Ar</span>
                                 </div>
                                 <div className="flex justify-between text-red-500">
-                                  <span>Frais bancaires (5%) — gardés banque</span>
+                                  <span>Bank fees (5%) — retained by bank</span>
                                   <span>+{fmt(pFees)} Ar</span>
                                 </div>
                                 <div className="flex justify-between text-blue-800 font-semibold">
-                                  <span>Total prélevé sur la carte</span>
+                                  <span>Total debited from card</span>
                                   <span>{fmt(p.amount + pFees)} Ar</span>
                                 </div>
                               </div>
                             )}
                             {p.receivedAmount && p.receivedAmount > p.amount && !p.method.includes("card") && (
                               <div className="flex justify-between text-muted-foreground mt-0.5">
-                                <span>Reçu : {fmt(p.receivedAmount)} Ar</span>
-                                <span className="text-blue-600 font-medium">Monnaie : {fmt(change)} Ar</span>
+                                <span>Received: {fmt(p.receivedAmount)} Ar</span>
+                                <span className="text-blue-600 font-medium">Change: {fmt(change)} Ar</span>
                               </div>
                             )}
                             {op && (
@@ -2102,17 +2102,17 @@ export default function RestaurantPOS() {
                   </div>
                 )}
 
-                {/* ── Encaissement ── */}
+                {/* ── Payment collection ── */}
                 {selectedOrder.status === "open" && bal > 0 && (
                   <div className="space-y-3 border rounded p-3 bg-muted/10">
-                    <div className="text-sm font-medium">Encaisser un paiement</div>
+                    <div className="text-sm font-medium">Collect payment</div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-xs text-muted-foreground mb-1 block">Montant à encaisser (Ar)</label>
+                        <label className="text-xs text-muted-foreground mb-1 block">Amount to collect (Ar)</label>
                         <Input
                           disabled
                           type="number" min={1}
-                          placeholder={bal > 0 ? `Reste : ${fmt(bal)} Ar` : "Montant"}
+                          placeholder={bal > 0 ? `Remaining: ${fmt(bal)} Ar` : "Amount"}
                           value={payAmount}
                           onChange={e => {
                             const v = Math.max(0, Number(e.target.value));
@@ -2122,24 +2122,24 @@ export default function RestaurantPOS() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-muted-foreground mb-1 block">Moyen de paiement</label>
+                        <label className="text-xs text-muted-foreground mb-1 block">Payment method</label>
                         <Select value={payMethod} onValueChange={v => setPayMethod(v as any)}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="cash">Espèces</SelectItem>
-                            <SelectItem value="card">Carte bancaire</SelectItem>
+                            <SelectItem value="cash">Cash</SelectItem>
+                            <SelectItem value="card">Credit Card</SelectItem>
                             <SelectItem value="mobile">Mobile Money</SelectItem>
-                            <SelectItem value="bank">Virement</SelectItem>
+                            <SelectItem value="bank">Bank Transfer</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-xs text-muted-foreground mb-1 block">Somme reçue du client (Ar)</label>
+                        <label className="text-xs text-muted-foreground mb-1 block">Amount received from customer (Ar)</label>
                         <Input
                           type="number" min={Number(payAmount) || 0}
-                          placeholder={payAmount ? `Min : ${fmt(Number(payAmount))} Ar` : "A Payé"}
+                          placeholder={payAmount ? `Min: ${fmt(Number(payAmount))} Ar` : "Paid"}
                           value={receivedAmount}
                           onChange={e => {
                             const v = Math.max(0, Number(e.target.value));
@@ -2151,12 +2151,12 @@ export default function RestaurantPOS() {
                       <div className="flex flex-col justify-end">
                         {changeToGive > 0 ? (
                           <div className="bg-blue-50 border border-blue-200 rounded p-2 text-center">
-                            <div className="text-xs text-blue-600">Monnaie à rendre</div>
+                            <div className="text-xs text-blue-600">Change to give</div>
                             <div className="font-bold text-blue-700 text-lg">{fmt(changeToGive)} Ar</div>
                           </div>
                         ) : (
                           <div className="bg-muted/30 rounded p-2 text-center">
-                            <div className="text-xs text-muted-foreground">Monnaie</div>
+                            <div className="text-xs text-muted-foreground">Change</div>
                             <div className="font-medium text-muted-foreground">0 Ar</div>
                           </div>
                         )}
@@ -2165,8 +2165,8 @@ export default function RestaurantPOS() {
 
                     {payAmount !== "" && bal > 0 && Number(payAmount) > bal && (
                       <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
-                        Le montant imputé ({fmt(Number(payAmount))} Ar) dépasse le reste dû ({fmt(bal)} Ar).
-                        Un avoir de {fmt(Number(payAmount) - bal)} Ar sera constaté.
+                        The payment amount ({fmt(Number(payAmount))} Ar) exceeds the remaining due ({fmt(bal)} Ar).
+                        A credit of {fmt(Number(payAmount) - bal)} Ar will be recorded.
                       </div>
                     )}
 
@@ -2174,24 +2174,24 @@ export default function RestaurantPOS() {
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
                         <div className="flex items-center gap-2 text-blue-800 font-medium text-xs">
                           <CreditCard className="h-3.5 w-3.5 shrink-0" />
-                          Récapitulatif carte bancaire (information client)
+                          Credit card summary (customer information)
                         </div>
                         <div className="space-y-1 text-xs">
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Consommation encaissée</span>
+                            <span className="text-muted-foreground">Consumption amount collected</span>
                             <span className="font-semibold text-green-700">{fmt(Number(payAmount))} Ar</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-red-600">+ Frais bancaires (5%) — retenus par la banque</span>
+                            <span className="text-red-600">+ Bank fees (5%) — retained by the bank</span>
                             <span className="text-red-600 font-semibold">+{fmt(nextCardFeePreview)} Ar</span>
                           </div>
                           <div className="flex justify-between border-t border-blue-200 pt-1">
-                            <span className="text-blue-800 font-semibold">Total prélevé sur la carte du client</span>
+                            <span className="text-blue-800 font-semibold">Total debited from customer's card</span>
                             <span className="text-blue-800 font-bold">{fmt(Number(payAmount) + nextCardFeePreview)} Ar</span>
                           </div>
                         </div>
                         <p className="text-xs text-muted-foreground italic">
-                          L'établissement encaisse {fmt(Number(payAmount))} Ar. Les {fmt(nextCardFeePreview)} Ar de frais sont retenus par la banque.
+                          The establishment collects {fmt(Number(payAmount))} Ar. The {fmt(nextCardFeePreview)} Ar fees are retained by the bank.
                         </p>
                       </div>
                     )}
@@ -2204,18 +2204,18 @@ export default function RestaurantPOS() {
                         (receivedAmount !== "" && Number(receivedAmount) < Number(payAmount))
                       }
                     >
-                      {payOrder.isPending ? "…" : `Encaisser ${payAmount ? fmt(Number(payAmount)) + " Ar" : ""}`}
+                      {payOrder.isPending ? "…" : `Collect ${payAmount ? fmt(Number(payAmount)) + " Ar" : ""}`}
                     </Button>
                   </div>
                 )}
 
                 {selectedOrder.status === "open" && bal === 0 && (
                   <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded p-3 text-sm font-medium">
-                    <CheckCircle2 className="h-4 w-4" /> Commande entièrement soldée
+                    <CheckCircle2 className="h-4 w-4" /> Order fully paid
                   </div>
                 )}
 
-                {/* Actions bas de page */}
+                {/* Bottom actions */}
                 <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t">
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => print80mm(selectedOrder.table?.code ?? "—", selectedOrder)}>
@@ -2228,10 +2228,10 @@ export default function RestaurantPOS() {
                   <div className="flex gap-2">
                     {selectedOrder.status === "open" && (
                       <Button size="sm" onClick={() => closeOrder.mutate(selectedOrder.id)} disabled={closeOrder.isPending}>
-                        {closeOrder.isPending ? "…" : "Clôturer"}
+                        {closeOrder.isPending ? "…" : "Close"}
                       </Button>
                     )}
-                    <Button variant="outline" size="sm" onClick={() => setDetailsOpen(false)}>Fermer</Button>
+                    <Button variant="outline" size="sm" onClick={() => setDetailsOpen(false)}>Close</Button>
                   </div>
                 </div>
               </div>
@@ -2244,26 +2244,26 @@ export default function RestaurantPOS() {
       <Dialog open={chargeOpen} onOpenChange={setChargeOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Imputer au folio chambre</DialogTitle>
-            <DialogDescription>Sélectionnez le client en chambre</DialogDescription>
+            <DialogTitle>Charge to room folio</DialogTitle>
+            <DialogDescription>Select the checked-in guest</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {checkedIn.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Aucun client checked_in aujourd'hui.</p>
+              <p className="text-sm text-muted-foreground">No checked-in guests today.</p>
             ) : (
               <Select onValueChange={v => setSelectedOrder((s: any) => s ? { ...s, targetFolioId: Number(v) } : s)}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner une réservation" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select a reservation" /></SelectTrigger>
                 <SelectContent>
                   {(checkedIn as any[]).map((r: any) => (
                     <SelectItem key={r.id} value={String(r.folio.id)}>
-                      {r.guest?.fullName} · Ch {r.room?.number}
+                      {r.guest?.fullName} · Rm {r.room?.number}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             )}
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setChargeOpen(false)}>Annuler</Button>
+              <Button variant="outline" onClick={() => setChargeOpen(false)}>Cancel</Button>
               <Button
                 onClick={() => {
                   if (selectedOrder && (selectedOrder as any).targetFolioId)
@@ -2271,7 +2271,7 @@ export default function RestaurantPOS() {
                 }}
                 disabled={chargeToFolio.isPending || !selectedOrder || !(selectedOrder as any)?.targetFolioId}
               >
-                {chargeToFolio.isPending ? "…" : "Imputer & Clôturer"}
+                {chargeToFolio.isPending ? "…" : "Charge & Close"}
               </Button>
             </div>
           </div>
